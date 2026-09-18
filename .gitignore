@@ -1,0 +1,37 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime / build
+node_modules/
+dist/
+build/
+out/
+coverage/
+.cache/
+.tmp/
+tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Rust
+/target/
+
+# Local Ann-E data
+.local/
+data/runtime/
+data/cache/
+data/secrets/
