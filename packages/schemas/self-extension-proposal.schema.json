@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/self-extension-proposal.schema.json",
+  "title": "Ann-E SelfExtensionProposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "proposal_id",
+    "requested_capability",
+    "rationale",
+    "source",
+    "revision",
+    "checksum",
+    "license",
+    "dependency_tree",
+    "security_scan",
+    "tests",
+    "compatibility",
+    "risk_classification",
+    "approval_status",
+    "checkpoint",
+    "rollback_target",
+    "post_install_health"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.json#/$defs/schemaVersion"
+    },
+    "proposal_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "requested_capability": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "format": "uri"
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "checksum": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dependency_tree": {
+      "type": "array"
+    },
+    "security_scan": {
+      "type": "object"
+    },
+    "tests": {
+      "type": "object"
+    },
+    "compatibility": {
+      "type": "object"
+    },
+    "risk_classification": {
+      "type": "string",
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ]
+    },
+    "approval_status": {
+      "type": "string",
+      "enum": [
+        "PROPOSED",
+        "APPROVED",
+        "REJECTED",
+        "INSTALLED",
+        "ROLLED_BACK"
+      ]
+    },
+    "checkpoint": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rollback_target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "post_install_health": {
+      "type": "object"
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/task-state.schema.json",
+  "title": "Ann-E TaskState",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "task_id",
+    "state"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.json#/$defs/schemaVersion"
+    },
+    "request_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "task_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "QUEUED",
+        "PLANNING",
+        "WAITING_APPROVAL",
+        "RUNNING",
+        "VALIDATING",
+        "ROLLING_BACK",
+        "SUCCEEDED",
+        "FAILED",
+        "CANCELLED",
+        "DENIED",
+        "TIMED_OUT"
+      ]
+    },
+    "message": {
+      "type": "string"
+    }
+  }
+}
