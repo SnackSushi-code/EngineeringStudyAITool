@@ -35,3 +35,6 @@ venv/
 data/runtime/
 data/cache/
 data/secrets/
+
+# Python packaging artifacts
+**/*.egg-info/
