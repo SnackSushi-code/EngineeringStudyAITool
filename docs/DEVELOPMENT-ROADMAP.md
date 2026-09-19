@@ -30,10 +30,34 @@ Stable contracts between presentation, orchestration, policy, tools, memory, Col
 Trust zones, dependency boundaries, threat model, secrets boundary, audit ownership, artifact truth model, and security invariants.
 
 ### 0.4 Runtime
-- 0.4.1 Runtime foundation — COMPLETE
-- 0.4.2 Runtime orchestration — NEXT
+
+- 0.4.1 Runtime foundation - COMPLETE
+- 0.4.2 Runtime orchestration - COMPLETE
+- 0.4.3 Runtime integration - COMPLETE
+- 0.4.4 Controlled adapter execution boundary - COMPLETE
+- 0.4.5 Runtime hardening and failure containment - COMPLETE pending final commit/PR
+- 0.4.6 Runtime isolation and process boundaries - NEXT
 - Additional runtime hardening milestones as required
 
+#### 0.4.2 Runtime orchestration
+
+Task lifecycle, correlation, cancellation, timeout, retry/idempotency, tool validation, policy integration, structured failures, and audit integration.
+
+#### 0.4.3 Runtime integration
+
+Adapter manifests/registry, observability, environment configuration, health checks, and integration scaffolding.
+
+#### 0.4.4 Controlled adapter execution boundary
+
+Controlled adapter execution, capability/authorization separation, resource grants, correlation enforcement, artifact provenance, truth-state tracking, deterministic mock adapter, and fail-closed unknown-adapter behavior.
+
+#### 0.4.5 Runtime hardening and failure containment
+
+Adapter exception/timeout containment, malformed-result rejection, artifact workspace containment, provenance validation, safe failure messages, and cancellation propagation.
+
+#### 0.4.6 Runtime isolation and process boundaries
+
+Introduce stronger execution isolation for adapters that require it, including process-level boundaries, sandbox enforcement, resource limits, and controlled termination/recovery behavior.
 ## Phase 1 — Ann-E Desktop Shell
 
 Build the actual desktop application:

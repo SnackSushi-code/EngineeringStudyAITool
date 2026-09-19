@@ -8,12 +8,11 @@ Repository:
 
 ## Current Development State
 
-- Current branch: `phase-0.4/runtime-foundation`
-- Latest completed commit: `fdd0705`
-- Latest commit message: `feat: add Phase 0.4.1 runtime foundation`
-- Phase 0.4.1 has been committed and pushed to GitHub.
-- Next milestone: **Phase 0.4.2 — Runtime Orchestration**
-
+- Current branch: `phase-0.4.5/runtime-hardening`
+- Latest completed baseline: Phase 0.4.4 merge commit `640edab`
+- Current milestone: **Phase 0.4.5 - Runtime Hardening and Failure Containment**
+- Phase 0.4.5 implementation and validation are complete pending final commit/PR.
+- Next milestone after 0.4.5: **Phase 0.4.6 - Runtime Isolation and Process Boundaries**
 ## Completed Milestones
 
 ### Phase 0
@@ -25,6 +24,95 @@ Repository:
 - 0.2.3 CI foundation — complete
 - 0.3 Architecture hardening — complete
 - 0.4.1 Runtime foundation — complete
+
+## Phase 0.4 Runtime Milestone History
+
+### Phase 0.4.2 Runtime Orchestration
+
+Implemented:
+- Task orchestration and lifecycle management
+- Request/task/tool-call correlation
+- Cooperative cancellation
+- Timeouts
+- Safe retry and idempotency handling
+- Tool-call and tool-result validation
+- Policy-broker integration
+- Structured failure handling
+- Terminal-state enforcement
+- Audit integration
+
+Validation:
+- Runtime suite: 31/31 passing at completion
+- Architecture suite: 6/6 passing
+- Contract suite: 19/19 passing
+- Schema validation: 12/12 valid
+
+### Phase 0.4.3 Runtime Integration
+
+Implemented:
+- Adapter manifests and registry
+- Structured observability
+- Environment configuration
+- Health checks
+- Future adapter integration scaffolding
+
+Validation:
+- Runtime suite: 39/39 passing at completion
+- Architecture suite: 6/6 passing
+- Contract suite: 19/19 passing
+- Schema validation: 12/12 valid
+
+### Phase 0.4.4 Controlled Adapter Execution Boundary
+
+Implemented:
+- Controlled adapter execution contract
+- Capability declarations separated from authorization
+- Resource grants
+- Request/task correlation enforcement
+- Artifact provenance
+- Artifact truth-state tracking
+- Deterministic mock engineering adapter
+- Unknown-adapter fail-closed behavior
+- Cancellation boundary
+- Adapter execution regression tests
+
+Validation:
+- Runtime suite: 45/45 passing at completion
+- Architecture suite: 6/6 passing
+- Contract suite: 19/19 passing
+- Schema validation: 12/12 valid
+
+Merge:
+- PR #4 merged
+- Merge commit: 640edab
+
+### Phase 0.4.5 Runtime Hardening and Failure Containment
+
+Implemented:
+- Adapter exception containment
+- Adapter timeout normalization
+- Malformed-result containment
+- Correlation and identity validation
+- Terminal-state validation
+- Artifact provenance validation
+- Granted-workspace artifact containment
+- Safe model-visible failure messages
+- Cooperative cancellation propagation
+- Positive timeout validation
+
+Validation:
+- Focused failure-containment tests: 6/6 passing
+- Full runtime suite: 51/51 passing
+- Architecture suite: 6/6 passing
+- Contract suite: 19/19 passing
+- Schema validation: 12/12 valid
+- Registered format checkers: date-time, URI, UUID
+- Python compilation: passing
+- git diff --check: clean apart from normal line-ending warnings
+
+Important boundary:
+- Phase 0.4.5 does not provide preemptive termination of arbitrary in-process third-party code.
+- Process-level isolation and stronger sandbox enforcement remain future runtime/security work.
 
 ## Phase 0.4.1 Runtime Foundation
 
@@ -59,29 +147,34 @@ Important safety boundary:
 - No software installation/update
 - Colony cannot authorize operations
 
-## Next Milestone: Phase 0.4.2
+## Next Milestone: Phase 0.4.6
 
-Build the runtime orchestration layer around the existing foundation.
+Build stronger runtime isolation and process boundaries for adapter execution.
 
 Expected capabilities:
-- Task orchestration
-- Request/task/tool-call correlation
-- Lifecycle management
-- Cooperative cancellation
-- Timeouts
-- Safe retry/idempotency behavior
-- Tool-call validation
-- Tool-result validation
-- Policy-broker integration
-- Audit integration
-- Structured failure handling
-- No-op execution path for initial validation
+
+- Process-level execution boundaries where required
+- Stronger sandbox enforcement
+- Resource limits
+- Controlled termination
+- Process crash containment
+- Recovery behavior
+- Adapter lifecycle supervision
+- Isolation regression tests
+- Security boundary validation
+
+Important boundary:
+
+- Phase 0.4.6 must not weaken the existing centralized authorization model.
+- Isolation is an execution boundary, not an authorization mechanism.
+- Adapters cannot grant themselves permission.
+- Colony remains a visualization/simulation layer and cannot authorize operations.
 
 Core invariant:
-> There is exactly one controlled path from a task request to tool execution.
 
-Do not introduce privileged execution merely to make the orchestration layer appear complete.
+> There is exactly one controlled path from a task request to authorized tool execution, and privileged adapter execution occurs only inside an explicitly controlled execution boundary.
 
+Do not introduce privileged execution merely to make the isolation layer appear complete.
 ## Future Roadmap
 
 1. Phase 0 — Foundation and runtime
