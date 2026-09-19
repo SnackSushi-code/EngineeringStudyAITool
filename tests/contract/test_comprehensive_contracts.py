@@ -12,7 +12,6 @@ from validate_schemas import FORMAT_CHECKER, build_registry, load_schemas
 
 
 ROOT = Path(__file__).resolve().parents[2]
-FIXTURE_DIR = ROOT / "tests" / "contract" / "fixtures"
 
 
 UUID_1 = "11111111-1111-4111-8111-111111111111"
@@ -310,11 +309,19 @@ class ComprehensiveContractTests(unittest.TestCase):
         fixture = deepcopy(
             VALID_FIXTURES["task-request.schema.json"]
         )
-        fixture["created_at"] = "not-a-timestamp"
-
         validator = self.validator_for("task-request.schema.json")
 
+        fixture["created_at"] = "not-a-timestamp"
         self.assertTrue(list(validator.iter_errors(fixture)))
+
+        fixture["created_at"] = "2026-09-18T18:00:00"
+        self.assertTrue(list(validator.iter_errors(fixture)))
+
+        fixture["created_at"] = "2026-09-18T18:00:00Z"
+        self.assertEqual(
+            list(validator.iter_errors(fixture)),
+            [],
+        )
 
     def test_enum_constraints_are_enforced(self):
         cases = [

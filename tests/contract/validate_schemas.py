@@ -20,8 +20,16 @@ def _is_date_time(value: object) -> bool:
 
     try:
         from datetime import datetime
-        datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return "T" in value or "t" in value
+
+        parsed = datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        )
+
+        return (
+            ("T" in value or "t" in value)
+            and parsed.tzinfo is not None
+            and parsed.utcoffset() is not None
+        )
     except ValueError:
         return False
 
