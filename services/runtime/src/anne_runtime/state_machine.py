@@ -16,6 +16,7 @@ _ALLOWED: dict[TaskState, frozenset[TaskState]] = {
         TaskState.WAITING_APPROVAL,
         TaskState.RUNNING,
         TaskState.FAILED,
+        TaskState.DENIED,
         TaskState.CANCELLED,
         TaskState.TIMED_OUT,
     }),

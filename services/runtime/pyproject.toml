@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ann-e-runtime"
-version = "0.4.1"
-description = "Ann-E runtime foundation"
+version = "0.4.2"
+description = "Ann-E runtime orchestration foundation"
 requires-python = ">=3.12"
 dependencies = [
     "jsonschema==4.26.0",

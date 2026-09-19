@@ -28,3 +28,8 @@ class TaskStateMachineTests(unittest.TestCase):
         machine = TaskStateMachine(TaskState.QUEUED)
         with self.assertRaises(InvalidTransitionError):
             machine.transition(TaskState.SUCCEEDED)
+
+    def test_planning_can_be_denied_before_execution(self):
+        machine = TaskStateMachine(TaskState.PLANNING)
+        machine.transition(TaskState.DENIED)
+        self.assertEqual(TaskState.DENIED, machine.state)
