@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ann-e-runtime"
-version = "0.4.4"
-description = "Ann-E controlled runtime adapter execution boundary"
+version = "0.4.5"
+description = "Ann-E runtime hardening and adapter failure containment"
 requires-python = ">=3.12"
 dependencies = [
     "jsonschema==4.26.0",
