@@ -1,20 +1,13 @@
-﻿"""Windows-native enforcement implementation.
-
-Phase 0.4.8-B2 introduces Windows Job Objects as the first real
-OS-level enforcement mechanism.
-
-The adapter reports a control as enforced only when the corresponding
-Windows-native mechanism is configured successfully.
-"""
+﻿"""Windows-native process enforcement using Windows Job Objects."""
 
 from __future__ import annotations
 
 import ctypes
 import os
-from ctypes import wintypes
 from dataclasses import dataclass
-from uuid import uuid4
+from typing import Any
 
+from .isolation import IsolationPolicy
 from .platform_enforcement import (
     EnforcementCapabilities,
     EnforcementControl,
@@ -25,67 +18,92 @@ from .platform_enforcement import (
 )
 
 
-WINDOWS_ADAPTER_VERSION = "0.2.0"
+WINDOWS_ADAPTER_VERSION = "0.2.1"
 
 
 class WindowsEnforcementError(RuntimeError):
-    """Raised when Windows-native enforcement cannot be configured."""
+    """Raised when Windows enforcement cannot be configured or used."""
 
 
-# ---------------------------------------------------------------------------
-# Windows constants
-# ---------------------------------------------------------------------------
+def _raise_last_error(operation: str) -> None:
+    error_code = ctypes.get_last_error()
+    raise WindowsEnforcementError(
+        f"{operation} failed with Windows error {error_code}"
+    )
 
-_KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-JOB_OBJECT_LIMIT_WORKINGSET = 0x00000001
-JOB_OBJECT_LIMIT_PROCESS_TIME = 0x00000002
-JOB_OBJECT_LIMIT_JOB_TIME = 0x00000004
+def _load_kernel32() -> Any:
+    """Load kernel32 and configure the Win32 APIs used by this adapter."""
+
+    if os.name != "nt":
+        raise WindowsEnforcementError(
+            "Windows enforcement is only available on Windows."
+        )
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p]
+    kernel32.CreateJobObjectW.restype = ctypes.c_void_p
+
+    kernel32.SetInformationJobObject.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+    ]
+    kernel32.SetInformationJobObject.restype = ctypes.c_int
+
+    kernel32.AssignProcessToJobObject.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    kernel32.AssignProcessToJobObject.restype = ctypes.c_int
+
+    kernel32.TerminateJobObject.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+    ]
+    kernel32.TerminateJobObject.restype = ctypes.c_int
+
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+
+    return kernel32
+
+
+_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+_JOB_OBJECT_CPU_RATE_CONTROL_INFORMATION = 15
+
 JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
-JOB_OBJECT_LIMIT_AFFINITY = 0x00000010
-JOB_OBJECT_LIMIT_PRIORITY_CLASS = 0x00000020
-JOB_OBJECT_LIMIT_PRESERVE_JOB_TIME = 0x00000040
-JOB_OBJECT_LIMIT_SCHEDULING_CLASS = 0x00000080
 JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
-JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
-JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION = 0x00000400
-JOB_OBJECT_LIMIT_BREAKAWAY_OK = 0x00000800
-JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK = 0x00001000
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 
 JOB_OBJECT_CPU_RATE_CONTROL_ENABLE = 0x1
 JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP = 0x4
 
-JobObjectExtendedLimitInformation = 9
-JobObjectCpuRateControlInformation = 15
-
-
-# ---------------------------------------------------------------------------
-# Windows structures
-# ---------------------------------------------------------------------------
 
 class _IO_COUNTERS(ctypes.Structure):
     _fields_ = [
-        ("ReadOperationCount", wintypes.ULARGE_INTEGER),
-        ("WriteOperationCount", wintypes.ULARGE_INTEGER),
-        ("OtherOperationCount", wintypes.ULARGE_INTEGER),
-        ("ReadTransferCount", wintypes.ULARGE_INTEGER),
-        ("WriteTransferCount", wintypes.ULARGE_INTEGER),
-        ("OtherTransferCount", wintypes.ULARGE_INTEGER),
+        ("ReadOperationCount", ctypes.c_uint64),
+        ("WriteOperationCount", ctypes.c_uint64),
+        ("OtherOperationCount", ctypes.c_uint64),
+        ("ReadTransferCount", ctypes.c_uint64),
+        ("WriteTransferCount", ctypes.c_uint64),
+        ("OtherTransferCount", ctypes.c_uint64),
     ]
 
 
 class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
     _fields_ = [
-        ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
-        ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
-        ("LimitFlags", wintypes.DWORD),
+        ("PerProcessUserTimeLimit", ctypes.c_int64),
+        ("PerJobUserTimeLimit", ctypes.c_int64),
+        ("LimitFlags", ctypes.c_uint32),
         ("MinimumWorkingSetSize", ctypes.c_size_t),
         ("MaximumWorkingSetSize", ctypes.c_size_t),
-        ("ActiveProcessLimit", wintypes.DWORD),
+        ("ActiveProcessLimit", ctypes.c_uint32),
         ("Affinity", ctypes.c_size_t),
-        ("PriorityClass", wintypes.DWORD),
-        ("SchedulingClass", wintypes.DWORD),
+        ("PriorityClass", ctypes.c_uint32),
+        ("SchedulingClass", ctypes.c_uint32),
     ]
 
 
@@ -102,108 +120,49 @@ class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
 
 class _JOBOBJECT_CPU_RATE_CONTROL_INFORMATION(ctypes.Structure):
     _fields_ = [
-        ("ControlFlags", wintypes.DWORD),
-        ("CpuRate", wintypes.DWORD),
+        ("ControlFlags", ctypes.c_uint32),
+        ("CpuRate", ctypes.c_uint32),
     ]
-
-
-# ---------------------------------------------------------------------------
-# Win32 prototypes
-# ---------------------------------------------------------------------------
-
-_KERNEL32.CreateJobObjectW.argtypes = [
-    wintypes.LPVOID,
-    wintypes.LPCWSTR,
-]
-_KERNEL32.CreateJobObjectW.restype = wintypes.HANDLE
-
-_KERNEL32.SetInformationJobObject.argtypes = [
-    wintypes.HANDLE,
-    wintypes.INT,
-    wintypes.LPVOID,
-    wintypes.DWORD,
-]
-_KERNEL32.SetInformationJobObject.restype = wintypes.BOOL
-
-_KERNEL32.AssignProcessToJobObject.argtypes = [
-    wintypes.HANDLE,
-    wintypes.HANDLE,
-]
-_KERNEL32.AssignProcessToJobObject.restype = wintypes.BOOL
-
-_KERNEL32.TerminateJobObject.argtypes = [
-    wintypes.HANDLE,
-    wintypes.UINT,
-]
-_KERNEL32.TerminateJobObject.restype = wintypes.BOOL
-
-_KERNEL32.CloseHandle.argtypes = [
-    wintypes.HANDLE,
-]
-_KERNEL32.CloseHandle.restype = wintypes.BOOL
-
-
-def _raise_last_error(operation: str) -> None:
-    error = ctypes.get_last_error()
-    raise WindowsEnforcementError(
-        f"{operation} failed with Win32 error {error}."
-    )
 
 
 @dataclass
 class _JobHandle:
-    """Owned native Job Object handle."""
+    """Owned native Windows Job Object handle."""
 
     handle: int
-    closed: bool = False
+    kernel32: Any
 
     def close(self) -> None:
-        if self.closed:
+        if self.handle:
+            result = self.kernel32.CloseHandle(self.handle)
+            self.handle = 0
+            if not result:
+                _raise_last_error("CloseHandle")
+
+    def terminate(self, exit_code: int) -> None:
+        if not self.handle:
             return
 
-        if not _KERNEL32.CloseHandle(self.handle):
-            _raise_last_error("CloseHandle")
-
-        self.closed = True
-
-    def terminate(self, exit_code: int = 1) -> None:
-        if self.closed:
-            return
-
-        if not _KERNEL32.TerminateJobObject(self.handle, exit_code):
+        result = self.kernel32.TerminateJobObject(
+            self.handle,
+            ctypes.c_uint32(exit_code),
+        )
+        if not result:
             _raise_last_error("TerminateJobObject")
 
 
 class WindowsEnforcementAdapter:
-    """Windows-native enforcement adapter.
-
-    B2 provides real Job Object enforcement for:
-
-    - forced termination;
-    - descendant-process containment;
-    - process-count limits;
-    - per-process memory limits;
-    - CPU hard-cap limits.
-
-    Filesystem, network, credential, and environment isolation remain
-    explicit gaps until their own native enforcement mechanisms exist.
-    """
-
-    _B2_VERSION = WINDOWS_ADAPTER_VERSION
+    """Concrete Windows enforcement adapter backed by Job Objects."""
 
     def __init__(self) -> None:
-        if os.name != "nt":
-            raise WindowsEnforcementError(
-                "WindowsEnforcementAdapter requires Windows."
-            )
-
-        self._prepared: dict[str, _JobHandle] = {}
+        self._kernel32 = _load_kernel32()
+        self._jobs: dict[int, _JobHandle] = {}
 
     @property
     def capabilities(self) -> EnforcementCapabilities:
         return EnforcementCapabilities(
             platform="windows",
-            adapter_version=self._B2_VERSION,
+            adapter_version=WINDOWS_ADAPTER_VERSION,
             controls=frozenset(
                 {
                     EnforcementControl.FORCED_TERMINATION,
@@ -215,67 +174,67 @@ class WindowsEnforcementAdapter:
             ),
         )
 
-    def prepare(self, request: EnforcementRequest) -> PreparedEnforcement:
-        policy = request.policy
+    def prepare(
+        self,
+        request: EnforcementRequest,
+    ) -> PreparedEnforcement:
+        policy: IsolationPolicy = request.policy
 
-        handle = _KERNEL32.CreateJobObjectW(None, None)
-        if not handle:
+        raw_handle = self._kernel32.CreateJobObjectW(None, None)
+        if not raw_handle:
             _raise_last_error("CreateJobObjectW")
 
-        job = _JobHandle(handle=int(handle))
+        job = _JobHandle(int(raw_handle), self._kernel32)
 
         try:
-            extended = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
-
-            flags = (
+            limit_info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            limit_info.BasicLimitInformation.LimitFlags = (
                 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
             )
 
             if policy.process_limit is not None:
-                flags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS
-                extended.BasicLimitInformation.ActiveProcessLimit = (
+                limit_info.BasicLimitInformation.LimitFlags |= (
+                    JOB_OBJECT_LIMIT_ACTIVE_PROCESS
+                )
+                limit_info.BasicLimitInformation.ActiveProcessLimit = (
                     policy.process_limit
                 )
 
             if policy.memory_limit_bytes is not None:
-                flags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY
-                extended.ProcessMemoryLimit = policy.memory_limit_bytes
-
-            extended.BasicLimitInformation.LimitFlags = flags
-
-            if not _KERNEL32.SetInformationJobObject(
-                job.handle,
-                JobObjectExtendedLimitInformation,
-                ctypes.byref(extended),
-                ctypes.sizeof(extended),
-            ):
-                _raise_last_error("SetInformationJobObject(extended limits)")
-
-            if policy.cpu_limit_percent is not None:
-                cpu = _JOBOBJECT_CPU_RATE_CONTROL_INFORMATION()
-                cpu.ControlFlags = (
-                    JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
-                    | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
+                limit_info.BasicLimitInformation.LimitFlags |= (
+                    JOB_OBJECT_LIMIT_PROCESS_MEMORY
                 )
+                limit_info.ProcessMemoryLimit = policy.memory_limit_bytes
 
-                # Windows expresses CPU rate as 1/100 of a percent:
-                # 100% => 10000.
-                cpu.CpuRate = policy.cpu_limit_percent * 100
+            result = self._kernel32.SetInformationJobObject(
+                job.handle,
+                _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                ctypes.byref(limit_info),
+                ctypes.sizeof(limit_info),
+            )
 
-                if not _KERNEL32.SetInformationJobObject(
-                    job.handle,
-                    JobObjectCpuRateControlInformation,
-                    ctypes.byref(cpu),
-                    ctypes.sizeof(cpu),
-                ):
-                    _raise_last_error("SetInformationJobObject(CPU rate)")
+            if not result:
+                _raise_last_error("SetInformationJobObject")
 
             enforced = {
                 EnforcementControl.FORCED_TERMINATION,
                 EnforcementControl.DESCENDANT_CONTROL,
             }
 
-            gaps: list[EnforcementGap] = []
+            gaps: list[EnforcementGap] = [
+                EnforcementGap(
+                    EnforcementControl.FILESYSTEM_ISOLATION,
+                    "Windows Job Objects do not provide filesystem isolation.",
+                ),
+                EnforcementGap(
+                    EnforcementControl.NETWORK_ISOLATION,
+                    "Network isolation is not implemented by this adapter.",
+                ),
+                EnforcementGap(
+                    EnforcementControl.CREDENTIAL_ISOLATION,
+                    "Credential isolation is not implemented by this adapter.",
+                ),
+            ]
 
             if policy.process_limit is not None:
                 enforced.add(EnforcementControl.PROCESS_COUNT_LIMITS)
@@ -283,7 +242,7 @@ class WindowsEnforcementAdapter:
                 gaps.append(
                     EnforcementGap(
                         EnforcementControl.PROCESS_COUNT_LIMITS,
-                        "No process-count limit was requested by the policy.",
+                        "No process-count limit was requested by policy.",
                     )
                 )
 
@@ -293,65 +252,73 @@ class WindowsEnforcementAdapter:
                 gaps.append(
                     EnforcementGap(
                         EnforcementControl.MEMORY_LIMITS,
-                        "No memory limit was requested by the policy.",
+                        "No memory limit was requested by policy.",
                     )
                 )
 
             if policy.cpu_limit_percent is not None:
+                cpu_info = _JOBOBJECT_CPU_RATE_CONTROL_INFORMATION()
+                cpu_info.ControlFlags = (
+                    JOB_OBJECT_CPU_RATE_CONTROL_ENABLE
+                    | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP
+                )
+                cpu_info.CpuRate = policy.cpu_limit_percent * 100
+
+                result = self._kernel32.SetInformationJobObject(
+                    job.handle,
+                    _JOBOBJECT_CPU_RATE_CONTROL_INFORMATION,
+                    ctypes.byref(cpu_info),
+                    ctypes.sizeof(cpu_info),
+                )
+
+                if not result:
+                    _raise_last_error(
+                        "SetInformationJobObject(CPU)"
+                    )
+
                 enforced.add(EnforcementControl.CPU_LIMITS)
             else:
                 gaps.append(
                     EnforcementGap(
                         EnforcementControl.CPU_LIMITS,
-                        "No CPU limit was requested by the policy.",
+                        "No CPU limit was requested by policy.",
                     )
                 )
-
-            # These mechanisms are not implemented in B2.
-            gaps.extend(
-                [
-                    EnforcementGap(
-                        EnforcementControl.FILESYSTEM_ISOLATION,
-                        "Filesystem ACL/token isolation is deferred.",
-                    ),
-                    EnforcementGap(
-                        EnforcementControl.NETWORK_ISOLATION,
-                        "Network isolation is deferred.",
-                    ),
-                    EnforcementGap(
-                        EnforcementControl.CREDENTIAL_ISOLATION,
-                        "Credential brokering/isolation is deferred.",
-                    ),
-                ]
-            )
 
             if policy.environment_allowlist:
                 gaps.append(
                     EnforcementGap(
                         EnforcementControl.ENVIRONMENT_ISOLATION,
-                        "Environment filtering is not yet attached to worker launch.",
+                        "Environment allowlisting is not implemented by this adapter.",
+                    )
+                )
+            else:
+                gaps.append(
+                    EnforcementGap(
+                        EnforcementControl.ENVIRONMENT_ISOLATION,
+                        "No environment allowlist was requested by policy.",
                     )
                 )
 
             plan = EnforcementPlan(
                 platform="windows",
-                adapter_version=self._B2_VERSION,
+                adapter_version=WINDOWS_ADAPTER_VERSION,
                 enforced_controls=frozenset(enforced),
                 gaps=tuple(gaps),
                 workspace_root=policy.workspace,
                 network_enabled=False,
-                environment={},
+                environment=(),
             )
 
-            handle_id = f"windows-job-{uuid4()}"
-            self._prepared[handle_id] = job
-
-            return PreparedEnforcement(
-                handle_id=handle_id,
+            prepared = PreparedEnforcement(
+                handle_id=job.handle,
                 plan=plan,
             )
 
-        except Exception:
+            self._jobs[job.handle] = job
+            return prepared
+
+        except BaseException:
             job.close()
             raise
 
@@ -360,14 +327,27 @@ class WindowsEnforcementAdapter:
         prepared: PreparedEnforcement,
         process_handle: int,
     ) -> None:
-        """Assign an already-created worker process to the prepared Job."""
+        if isinstance(process_handle, bool) or not isinstance(
+            process_handle,
+            int,
+        ):
+            raise WindowsEnforcementError(
+                "process_handle must be an integer native process handle"
+            )
+
+        if process_handle <= 0:
+            raise WindowsEnforcementError(
+                "process_handle must be a positive native process handle"
+            )
 
         job = self._get_job(prepared)
 
-        if not _KERNEL32.AssignProcessToJobObject(
+        result = self._kernel32.AssignProcessToJobObject(
             job.handle,
-            wintypes.HANDLE(process_handle),
-        ):
+            process_handle,
+        )
+
+        if not result:
             _raise_last_error("AssignProcessToJobObject")
 
     def terminate(
@@ -376,35 +356,35 @@ class WindowsEnforcementAdapter:
         *,
         exit_code: int = 1,
     ) -> None:
-        """Terminate the entire Job Object process tree."""
+        if isinstance(exit_code, bool) or not isinstance(
+            exit_code,
+            int,
+        ):
+            raise WindowsEnforcementError(
+                "exit_code must be an integer"
+            )
 
         job = self._get_job(prepared)
         job.terminate(exit_code)
 
     def release(self, prepared: PreparedEnforcement) -> None:
-        """Release the Job Object.
+        job = self._jobs.pop(prepared.handle_id, None)
 
-        Because B2 enables KILL_ON_JOB_CLOSE, closing the Job Object also
-        guarantees that assigned processes do not survive the supervisor's
-        ownership boundary.
-        """
-
-        if not isinstance(prepared, PreparedEnforcement):
-            raise TypeError("prepared must be PreparedEnforcement")
-
-        job = self._prepared.pop(prepared.handle_id, None)
         if job is None:
             return
 
         job.close()
 
-    def _get_job(self, prepared: PreparedEnforcement) -> _JobHandle:
-        if not isinstance(prepared, PreparedEnforcement):
-            raise TypeError("prepared must be PreparedEnforcement")
+    def _get_job(
+        self,
+        prepared: PreparedEnforcement,
+    ) -> _JobHandle:
+        job = self._jobs.get(prepared.handle_id)
 
-        try:
-            return self._prepared[prepared.handle_id]
-        except KeyError as exc:
+        if job is None:
             raise WindowsEnforcementError(
-                f"Unknown or released enforcement handle: {prepared.handle_id}"
-            ) from exc
+                f"unknown or released enforcement handle: "
+                f"{prepared.handle_id}"
+            )
+
+        return job
