@@ -218,6 +218,18 @@ class WorkerProcess:
     def state(self) -> WorkerProcessState:
         return self._state
 
+    @property
+    def process_handle(self) -> int:
+        """Return the native process handle used by platform enforcement."""
+        if self._process is None:
+            raise WorkerProcessError("worker process has not been created")
+
+        handle = getattr(self._process, "_handle", None)
+        if handle is None:
+            raise WorkerProcessError("native process handle is unavailable")
+
+        return int(handle)
+
     def snapshot(self) -> WorkerProcessSnapshot:
         return WorkerProcessSnapshot(
             worker_id=self._worker_id,
@@ -226,7 +238,13 @@ class WorkerProcess:
             exit_code=self._process.exitcode if self._process else self._exit_code,
         )
 
-    def start(self, start_message: WorkerMessage, *, timeout_seconds: float) -> WorkerMessage:
+    def start(
+        self,
+        start_message: WorkerMessage,
+        *,
+        timeout_seconds: float,
+        process_started: Callable[[int], None] | None = None,
+    ) -> WorkerMessage:
         if self._state != WorkerProcessState.NEW:
             raise WorkerProcessError("worker can only be started once")
         if timeout_seconds <= 0:
@@ -259,6 +277,9 @@ class WorkerProcess:
 
         try:
             process.start()
+
+            if process_started is not None:
+                process_started(self.process_handle)
 
             self._send(start_message)
             ready = self._receive(timeout_seconds)

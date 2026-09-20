@@ -7,6 +7,12 @@ from uuid import UUID, uuid4
 
 from .contracts import ToolCall
 from .isolation import IsolationPolicy, PlatformCapabilities, WorkerDescriptor
+from .platform_enforcement import (
+    EnforcementRequest,
+    PlatformEnforcementAdapter,
+    PreparedEnforcement,
+)
+from .worker_process import WorkerProcess
 from .worker_protocol import PROTOCOL_VERSION, WorkerMessage, WorkerMessageType
 
 
@@ -54,6 +60,7 @@ class SupervisorExecution:
     policy: IsolationPolicy
     state: SupervisorState = SupervisorState.NEW
     cleanup_complete: bool = False
+    prepared_enforcement: PreparedEnforcement | None = None
 
     def transition(self, next_state: SupervisorState) -> "SupervisorExecution":
         if next_state not in _ALLOWED_TRANSITIONS[self.state]:
@@ -69,13 +76,216 @@ class SupervisorExecution:
 class ExecutionSupervisor:
     """Lifecycle and boundary foundation; intentionally does not spawn processes yet."""
 
-    def __init__(self, *, platform_capabilities: PlatformCapabilities | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        platform_capabilities: PlatformCapabilities | None = None,
+        enforcement_adapter: PlatformEnforcementAdapter | None = None,
+    ) -> None:
         self._platform_capabilities = platform_capabilities or PlatformCapabilities()
+        self._enforcement_adapter = enforcement_adapter
         self._executions: dict[UUID, SupervisorExecution] = {}
+        self._workers: dict[UUID, WorkerProcess] = {}
 
     @property
     def platform_capabilities(self) -> PlatformCapabilities:
         return self._platform_capabilities
+
+    @property
+    def enforcement_adapter(self) -> PlatformEnforcementAdapter | None:
+        return self._enforcement_adapter
+
+    def prepare_enforcement(
+        self,
+        execution_id: UUID,
+    ) -> PreparedEnforcement:
+        execution = self._get(execution_id)
+
+        if execution.state != SupervisorState.AUTHORIZED:
+            raise SupervisorInvariantError(
+                "enforcement preparation requires AUTHORIZED state"
+            )
+
+        if self._enforcement_adapter is None:
+            raise SupervisorInvariantError(
+                "no platform enforcement adapter is configured"
+            )
+
+        request = EnforcementRequest(
+            execution_id=execution.execution_id,
+            request_id=execution.request_id,
+            task_id=execution.task_id,
+            worker=execution.worker,
+            policy=execution.policy,
+        )
+
+        prepared = self._enforcement_adapter.prepare(request)
+
+        self._executions[execution_id] = replace(
+            execution,
+            prepared_enforcement=prepared,
+        )
+
+        return prepared
+
+    def start_worker(
+        self,
+        execution_id: UUID,
+        worker: WorkerProcess,
+        *,
+        startup_timeout: float | None = None,
+    ) -> WorkerMessage:
+        execution = self._get(execution_id)
+
+        if execution.state != SupervisorState.AUTHORIZED:
+            raise SupervisorInvariantError(
+                "worker start requires AUTHORIZED state"
+            )
+
+        if self._enforcement_adapter is not None:
+            if execution.prepared_enforcement is None:
+                self.prepare_enforcement(execution_id)
+
+            execution = self._get(execution_id)
+
+        self.transition(execution_id, SupervisorState.STARTING)
+
+        self._workers[execution_id] = worker
+
+        def process_started(process_handle: int) -> None:
+            current = self._get(execution_id)
+
+            if (
+                self._enforcement_adapter is not None
+                and current.prepared_enforcement is not None
+            ):
+                self._enforcement_adapter.assign_process(
+                    current.prepared_enforcement,
+                    process_handle,
+                )
+
+        try:
+            start_message = worker.start(
+                self.build_start_message(execution_id),
+                timeout_seconds=(
+                    startup_timeout
+                    if startup_timeout is not None
+                    else self._get(execution_id).policy.timeout_seconds
+                ),
+                process_started=process_started,
+            )
+
+            current = self._get(execution_id)
+            if current.state != SupervisorState.STARTING:
+                raise SupervisorInvariantError(
+                    "worker startup completed outside STARTING state"
+                )
+
+            self._executions[execution_id] = current.transition(
+                SupervisorState.READY
+            )
+
+            return start_message
+
+        except BaseException:
+            cleanup_error: BaseException | None = None
+
+            try:
+                worker.terminate()
+            except BaseException as exc:
+                cleanup_error = exc
+            finally:
+                try:
+                    worker.close()
+                finally:
+                    self._release_enforcement(execution_id)
+                    self._workers.pop(execution_id, None)
+
+                    current = self._get(execution_id)
+
+                    if current.state != SupervisorState.CLEANUP:
+                        current = current.transition(SupervisorState.CLEANUP)
+
+                    current = current.mark_cleanup_complete()
+                    self._executions[execution_id] = current
+
+            if cleanup_error is not None:
+                raise cleanup_error
+
+            raise
+
+    def execute_worker(
+        self,
+        execution_id: UUID,
+        payload: dict[str, Any],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> WorkerMessage:
+        execution = self._get(execution_id)
+        worker = self._workers.get(execution_id)
+
+        if worker is None:
+            raise SupervisorInvariantError(
+                "no worker registered for execution"
+            )
+
+        if execution.state != SupervisorState.READY:
+            raise SupervisorInvariantError(
+                "worker execution requires READY state"
+            )
+
+        self.transition(execution_id, SupervisorState.RUNNING)
+
+        try:
+            result = worker.execute(
+                payload,
+                timeout_seconds=(
+                    timeout_seconds
+                    if timeout_seconds is not None
+                    else execution.policy.timeout_seconds
+                ),
+            )
+
+            self.transition(execution_id, SupervisorState.COMPLETED)
+            return result
+
+        except TimeoutError:
+            self.transition(execution_id, SupervisorState.TIMING_OUT)
+
+            current = self._get(execution_id)
+
+            try:
+                if (
+                    self._enforcement_adapter is not None
+                    and current.prepared_enforcement is not None
+                ):
+                    self._enforcement_adapter.terminate(
+                        current.prepared_enforcement,
+                        exit_code=124,
+                    )
+            finally:
+                worker.terminate()
+
+            raise
+
+        except BaseException:
+            self.transition(execution_id, SupervisorState.CRASHED)
+            raise
+
+    def _release_enforcement(self, execution_id: UUID) -> None:
+        execution = self._get(execution_id)
+        prepared = execution.prepared_enforcement
+
+        if prepared is None:
+            return
+
+        self._executions[execution_id] = replace(
+            execution,
+            prepared_enforcement=None,
+        )
+
+        if self._enforcement_adapter is not None:
+            self._enforcement_adapter.release(prepared)
 
     def authorize(self, call: ToolCall, worker: WorkerDescriptor, policy: IsolationPolicy, authorization: Any) -> SupervisorExecution:
         if not authorization:
@@ -94,12 +304,29 @@ class ExecutionSupervisor:
 
     def cleanup(self, execution_id: UUID) -> SupervisorExecution:
         execution = self._get(execution_id)
+
         if execution.cleanup_complete:
             return execution
+
+        worker = self._workers.get(execution_id)
+
+        if worker is not None:
+            try:
+                worker.terminate()
+            finally:
+                worker.close()
+
+        self._release_enforcement(execution_id)
+
+        execution = self._get(execution_id)
+
         if execution.state != SupervisorState.CLEANUP:
             execution = execution.transition(SupervisorState.CLEANUP)
+
         updated = execution.mark_cleanup_complete()
         self._executions[execution_id] = updated
+        self._workers.pop(execution_id, None)
+
         return updated
 
     def validate_worker_message(self, execution_id: UUID, message: WorkerMessage, *, expected_sequence: int | None = None) -> None:

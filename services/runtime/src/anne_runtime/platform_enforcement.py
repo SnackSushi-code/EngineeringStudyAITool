@@ -146,6 +146,23 @@ class PlatformEnforcementAdapter(Protocol):
         """Prepare an isolated launch without starting the worker."""
         ...
 
+    def assign_process(
+        self,
+        prepared: PreparedEnforcement,
+        process_handle: int,
+    ) -> None:
+        """Attach the created worker process to the prepared boundary."""
+        ...
+
+    def terminate(
+        self,
+        prepared: PreparedEnforcement,
+        *,
+        exit_code: int = 1,
+    ) -> None:
+        """Force termination of processes governed by the boundary."""
+        ...
+
     def release(self, prepared: PreparedEnforcement) -> None:
         """Release all preparation resources; must be idempotent."""
         ...
