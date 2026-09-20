@@ -1,4 +1,4 @@
-﻿__version__ = "0.5.0"
+﻿__version__ = "0.5.1"
 
 from .deterministic_provider import DeterministicModelProvider
 from .model_contracts import (
@@ -36,4 +36,37 @@ __all__ = [
     "ModelService",
     "ModelUsage",
     "ProviderRegistry",
+]
+
+from .tool_contracts import (
+    TOOL_CONTRACT_VERSION,
+    ToolArgument,
+    ToolArgumentSchema,
+    ToolApprovalRequiredError,
+    ToolAuditEvent,
+    ToolContractError,
+    ToolDescriptor,
+    ToolExecutionContext,
+    ToolExecutionError,
+    ToolInvocation,
+    ToolValidationState,
+    ToolValueType,
+)
+from .tool_executor import ToolExecutor
+from .tool_registry import ToolRegistry
+__all__ += [
+    "TOOL_CONTRACT_VERSION",
+    "ToolArgument",
+    "ToolArgumentSchema",
+    "ToolApprovalRequiredError",
+    "ToolAuditEvent",
+    "ToolContractError",
+    "ToolDescriptor",
+    "ToolExecutionContext",
+    "ToolExecutionError",
+    "ToolInvocation",
+    "ToolRegistry",
+    "ToolExecutor",
+    "ToolValidationState",
+    "ToolValueType",
 ]
