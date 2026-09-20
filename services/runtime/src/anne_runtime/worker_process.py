@@ -211,6 +211,8 @@ class WorkerProcess:
         self._exit_code: int | None = None
         self._request_id: UUID | None = None
         self._task_id: UUID | None = None
+        self._next_sequence = 1
+        self._next_sequence = 1
 
     @property
     def state(self) -> WorkerProcessState:
@@ -243,6 +245,7 @@ class WorkerProcess:
         self._parent = parent
         self._request_id = start_message.request_id
         self._task_id = start_message.task_id
+        self._next_sequence = 1
         self._state = WorkerProcessState.STARTING
 
         process = self._context.Process(
@@ -266,13 +269,13 @@ class WorkerProcess:
             raise WorkerProcessError("worker must be READY before execution")
         message = self._build_message(
             WorkerMessageType.EXECUTE,
-            sequence=1,
+            sequence=self._consume_sequence(),
             payload=payload,
         )
         self._state = WorkerProcessState.RUNNING
         self._send(message)
         result = self._receive(timeout_seconds)
-        self._validate_response(result, WorkerMessageType.RESULT, 1)
+        self._validate_response(result, WorkerMessageType.RESULT, result.sequence)
         self._state = WorkerProcessState.READY
         return result
 
@@ -282,7 +285,7 @@ class WorkerProcess:
         self._state = WorkerProcessState.CANCELLING
         message = self._build_message(
             WorkerMessageType.CANCEL,
-            sequence=2,
+            sequence=self._consume_sequence(),
             payload={"reason": "supervisor_cancelled"},
         )
         self._send(message)
@@ -311,7 +314,7 @@ class WorkerProcess:
                 self._send(
                     self._build_message(
                         WorkerMessageType.SHUTDOWN,
-                        sequence=2,
+                        sequence=self._consume_sequence(),
                         payload={},
                     )
                 )
@@ -388,6 +391,16 @@ class WorkerProcess:
         if message.sequence != expected_sequence:
             self._state = WorkerProcessState.CRASHED
             raise WorkerProcessError("unexpected worker response sequence")
+
+    def _consume_sequence(self) -> int:
+        sequence = self._next_sequence
+        self._next_sequence += 1
+        return sequence
+
+    def _consume_sequence(self) -> int:
+        sequence = self._next_sequence
+        self._next_sequence += 1
+        return sequence
 
     def _build_message(
         self,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import multiprocessing
 import time
 import unittest
+from unittest import mock
 from uuid import uuid4
 
 from anne_runtime.worker_process import (
@@ -50,6 +51,21 @@ class WorkerProcessTests(unittest.TestCase):
             self.assertEqual(worker.state, WorkerProcessState.READY)
         finally:
             worker.terminate()
+            worker.close()
+
+    def test_startup_timeout_can_be_terminated_without_sequence_error(self) -> None:
+        worker = WorkerProcess(
+            worker_id="worker-ipc-startup-timeout",
+            handler=echo_handler,
+            context=multiprocessing.get_context("spawn"),
+        )
+        with mock.patch.object(worker, "_receive", side_effect=TimeoutError):
+            with self.assertRaises(TimeoutError):
+                worker.start(make_start("worker-ipc-startup-timeout"), timeout_seconds=1)
+        try:
+            worker.terminate(grace_seconds=0.5)
+            self.assertEqual(worker.state, WorkerProcessState.STOPPED)
+        finally:
             worker.close()
 
     def test_timeout_is_detected_and_worker_can_be_terminated(self) -> None:

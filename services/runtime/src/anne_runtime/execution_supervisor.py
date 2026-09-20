@@ -32,7 +32,7 @@ class SupervisorState(StrEnum):
 _ALLOWED_TRANSITIONS = {
     SupervisorState.NEW: {SupervisorState.AUTHORIZED, SupervisorState.TERMINAL},
     SupervisorState.AUTHORIZED: {SupervisorState.STARTING, SupervisorState.TERMINAL},
-    SupervisorState.STARTING: {SupervisorState.READY, SupervisorState.CRASHED, SupervisorState.TERMINATING, SupervisorState.CLEANUP},
+    SupervisorState.STARTING: {SupervisorState.READY, SupervisorState.TIMING_OUT, SupervisorState.CRASHED, SupervisorState.TERMINATING, SupervisorState.CLEANUP},
     SupervisorState.READY: {SupervisorState.RUNNING, SupervisorState.CANCELLING, SupervisorState.TERMINATING, SupervisorState.CRASHED},
     SupervisorState.RUNNING: {SupervisorState.CANCELLING, SupervisorState.TIMING_OUT, SupervisorState.CRASHED, SupervisorState.COMPLETED, SupervisorState.TERMINATING},
     SupervisorState.CANCELLING: {SupervisorState.TERMINATING, SupervisorState.CLEANUP},
