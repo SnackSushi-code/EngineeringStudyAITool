@@ -1,64 +1,67 @@
-﻿# Phase 0.4.8-B1 — Windows Enforcement Foundation
+﻿# Phase 0.4.8 — Windows Enforcement
 
 ## Objective
 
-Introduce the first concrete Windows implementation of the platform
-enforcement contract defined by Phase 0.4.8-A.
+Provide real Windows-native enforcement for the Ann-E execution boundary.
 
-## Security Principle
+## B2 — Job Object Enforcement
 
-B1 intentionally makes **zero security enforcement capability claims**.
+B2 introduces Windows Job Objects as the first concrete security mechanism.
 
-The adapter is concrete and Windows-specific, but it does not report a
-control as enforced until a Windows-native mechanism is actually applied
-and dedicated tests demonstrate that behavior.
+The adapter now uses Windows-native Job Objects to enforce:
 
-This prevents the Python worker process boundary from being mistaken for a
-security sandbox.
+- forced termination;
+- descendant-process containment;
+- active process-count limits when requested;
+- per-process memory limits when requested;
+- CPU hard-cap limits when requested.
 
-## Adapter
+The adapter reports those controls as enforced only after the corresponding
+Windows API configuration succeeds.
 
-Implementation:
+## Security boundary
 
-services/runtime/src/anne_runtime/windows_enforcement.py
+Python multiprocessing is not treated as a security sandbox.
 
-The adapter:
+The Windows Job Object owns the worker process boundary and provides an
+OS-enforced containment mechanism for the controls supported by B2.
 
-- is Windows-specific;
-- implements the Phase 0.4.8-A platform enforcement contract;
-- reports zero enforced controls in B1;
-- converts requested policy constraints into explicit enforcement gaps;
-- does not claim Job Object, filesystem, network, credential, resource,
-  environment, or descendant-process enforcement;
-- provides idempotent release behavior.
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` is enabled so that releasing the
+supervisor's Job Object ownership cannot leave assigned worker processes
+running outside the intended lifetime.
 
-## B1 Boundary
+## Deferred controls
 
-B1 does not yet implement:
+The following remain explicit enforcement gaps:
 
-- Windows Job Objects;
-- restricted tokens;
-- filesystem ACL enforcement;
+- filesystem isolation;
 - network isolation;
 - credential isolation;
-- memory limits;
-- CPU limits;
-- process-count limits;
-- descendant-process containment;
-- supervisor launch integration.
+- environment filtering at worker launch.
 
-Those mechanisms are intentionally deferred to subsequent enforcement
-phases.
+These controls must not be reported as enforced until their Windows-native
+mechanisms are implemented and behaviorally tested.
 
-## Acceptance Criteria
+## B2 acceptance criteria
 
-B1 is complete only when:
+1. Windows adapter imports and initializes successfully.
+2. Job Object creation succeeds.
+3. Job Object configuration succeeds for supported policy limits.
+4. Forced termination is represented as an actual enforced capability.
+5. Descendant-process containment is represented as an actual enforced capability.
+6. Process-count limits are enforced when requested.
+7. Memory limits are enforced when requested.
+8. CPU hard caps are enforced when requested.
+9. Deferred controls remain explicit gaps.
+10. Job release is idempotent.
+11. Non-Windows environments reject the Windows adapter.
+12. Existing platform-enforcement contract tests continue to pass.
 
-1. The Windows adapter imports successfully on Windows.
-2. The adapter exposes the Phase 0.4.8-A enforcement contract.
-3. No control is reported as enforced without a real Windows mechanism.
-4. Requested policy constraints produce explicit enforcement gaps.
-5. Release is safe to call repeatedly.
-6. Dedicated Windows adapter tests pass.
-7. Existing platform-enforcement contract tests continue to pass.
-8. No supervisor behavior is changed by B1.
+## Important implementation boundary
+
+B2 prepares and owns the native Job Object but does not yet modify the
+ExecutionSupervisor worker-launch sequence.
+
+Supervisor integration remains a subsequent step so that process-handle
+ownership and lifecycle transitions can be introduced with dedicated
+end-to-end tests rather than hidden inside adapter preparation.

@@ -1,9 +1,12 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 from uuid import uuid4
+
 from anne_runtime.isolation import IsolationPolicy, WorkerDescriptor
 from anne_runtime.platform_enforcement import (
     EnforcementControl,
@@ -34,7 +37,7 @@ def make_request(
         worker=WorkerDescriptor(
             worker_id="windows-test-worker",
             adapter_id="anne.windows.test",
-            adapter_version="0.1.0",
+            adapter_version=WINDOWS_ADAPTER_VERSION,
             runtime_api="0.1",
         ),
         policy=IsolationPolicy(
@@ -52,51 +55,29 @@ def make_request(
 
 @unittest.skipUnless(os.name == "nt", "Windows-specific enforcement tests")
 class WindowsEnforcementAdapterTests(unittest.TestCase):
-    def test_adapter_reports_windows_platform(self) -> None:
-        adapter = WindowsEnforcementAdapter()
+    def setUp(self) -> None:
+        self.adapter = WindowsEnforcementAdapter()
 
-        self.assertEqual(adapter.capabilities.platform, "windows")
+    def test_adapter_reports_real_b2_capabilities(self) -> None:
+        controls = self.adapter.capabilities.controls
+
+        self.assertEqual(self.adapter.capabilities.platform, "windows")
         self.assertEqual(
-            adapter.capabilities.adapter_version,
+            self.adapter.capabilities.adapter_version,
             WINDOWS_ADAPTER_VERSION,
         )
+        self.assertIn(EnforcementControl.FORCED_TERMINATION, controls)
+        self.assertIn(EnforcementControl.DESCENDANT_CONTROL, controls)
+        self.assertIn(EnforcementControl.PROCESS_COUNT_LIMITS, controls)
+        self.assertIn(EnforcementControl.MEMORY_LIMITS, controls)
+        self.assertIn(EnforcementControl.CPU_LIMITS, controls)
 
-    def test_b1_does_not_claim_unimplemented_security_controls(self) -> None:
-        adapter = WindowsEnforcementAdapter()
+        self.assertNotIn(EnforcementControl.FILESYSTEM_ISOLATION, controls)
+        self.assertNotIn(EnforcementControl.NETWORK_ISOLATION, controls)
+        self.assertNotIn(EnforcementControl.CREDENTIAL_ISOLATION, controls)
 
-        self.assertEqual(adapter.capabilities.controls, frozenset())
-
-    def test_workspace_is_reported_as_filesystem_gap(self) -> None:
-        adapter = WindowsEnforcementAdapter()
-        prepared = adapter.prepare(make_request())
-
-        self.assertIsInstance(prepared, PreparedEnforcement)
-        self.assertEqual(prepared.plan.platform, "windows")
-        self.assertFalse(
-            prepared.plan.is_enforced(EnforcementControl.FILESYSTEM_ISOLATION)
-        )
-
-        gap_controls = {gap.control for gap in prepared.plan.gaps}
-        self.assertIn(EnforcementControl.FILESYSTEM_ISOLATION, gap_controls)
-
-    def test_disabled_network_is_explicit_gap(self) -> None:
-        adapter = WindowsEnforcementAdapter()
-        prepared = adapter.prepare(
-            make_request(network_enabled=False)
-        )
-
-        self.assertIn(
-            EnforcementControl.NETWORK_ISOLATION,
-            {gap.control for gap in prepared.plan.gaps},
-        )
-        self.assertFalse(
-            prepared.plan.is_enforced(EnforcementControl.NETWORK_ISOLATION)
-        )
-
-    def test_requested_resource_controls_are_explicit_gaps(self) -> None:
-        adapter = WindowsEnforcementAdapter()
-
-        prepared = adapter.prepare(
+    def test_job_is_prepared_without_starting_worker(self) -> None:
+        prepared = self.adapter.prepare(
             make_request(
                 memory_limit_bytes=128 * 1024 * 1024,
                 cpu_limit_percent=50,
@@ -104,42 +85,74 @@ class WindowsEnforcementAdapterTests(unittest.TestCase):
             )
         )
 
-        gaps = {gap.control for gap in prepared.plan.gaps}
+        try:
+            self.assertTrue(prepared.handle_id.startswith("windows-job-"))
+            self.assertTrue(
+                prepared.plan.is_enforced(
+                    EnforcementControl.FORCED_TERMINATION
+                )
+            )
+            self.assertTrue(
+                prepared.plan.is_enforced(
+                    EnforcementControl.DESCENDANT_CONTROL
+                )
+            )
+            self.assertTrue(
+                prepared.plan.is_enforced(
+                    EnforcementControl.PROCESS_COUNT_LIMITS
+                )
+            )
+            self.assertTrue(
+                prepared.plan.is_enforced(
+                    EnforcementControl.MEMORY_LIMITS
+                )
+            )
+            self.assertTrue(
+                prepared.plan.is_enforced(
+                    EnforcementControl.CPU_LIMITS
+                )
+            )
+        finally:
+            self.adapter.release(prepared)
 
-        self.assertIn(EnforcementControl.MEMORY_LIMITS, gaps)
-        self.assertIn(EnforcementControl.CPU_LIMITS, gaps)
-        self.assertIn(EnforcementControl.PROCESS_COUNT_LIMITS, gaps)
-
-    def test_credentials_and_environment_are_explicit_gaps(self) -> None:
-        adapter = WindowsEnforcementAdapter()
-
-        prepared = adapter.prepare(
+    def test_requested_deferred_controls_remain_gaps(self) -> None:
+        prepared = self.adapter.prepare(
             make_request(
                 credential_ids=("github-token",),
                 environment_allowlist=("PATH",),
             )
         )
 
-        gaps = {gap.control for gap in prepared.plan.gaps}
+        try:
+            gaps = {gap.control for gap in prepared.plan.gaps}
 
-        self.assertIn(EnforcementControl.CREDENTIAL_ISOLATION, gaps)
-        self.assertIn(EnforcementControl.ENVIRONMENT_ISOLATION, gaps)
+            self.assertIn(
+                EnforcementControl.FILESYSTEM_ISOLATION,
+                gaps,
+            )
+            self.assertIn(
+                EnforcementControl.NETWORK_ISOLATION,
+                gaps,
+            )
+            self.assertIn(
+                EnforcementControl.CREDENTIAL_ISOLATION,
+                gaps,
+            )
+            self.assertIn(
+                EnforcementControl.ENVIRONMENT_ISOLATION,
+                gaps,
+            )
+        finally:
+            self.adapter.release(prepared)
 
-    def test_preparation_does_not_claim_worker_started(self) -> None:
-        adapter = WindowsEnforcementAdapter()
-        prepared = adapter.prepare(make_request())
+    def test_job_release_is_idempotent(self) -> None:
+        prepared = self.adapter.prepare(make_request())
 
-        self.assertTrue(prepared.handle_id.startswith("windows-prepared-"))
-        self.assertEqual(prepared.plan.enforced_controls, frozenset())
-
-    def test_release_is_idempotent_for_b1_preparation(self) -> None:
-        adapter = WindowsEnforcementAdapter()
-        prepared = adapter.prepare(make_request())
-
-        adapter.release(prepared)
-        adapter.release(prepared)
+        self.adapter.release(prepared)
+        self.adapter.release(prepared)
 
     def test_non_windows_construction_is_rejected(self) -> None:
+        # This test runs only on non-Windows systems.
         if os.name == "nt":
             self.skipTest("Non-Windows guard cannot be exercised on Windows")
 
@@ -147,5 +160,52 @@ class WindowsEnforcementAdapterTests(unittest.TestCase):
             WindowsEnforcementAdapter()
 
 
+    def test_assign_and_terminate_real_process(self) -> None:
+        """Verify that a real process can be assigned to and terminated by the Job."""
+        import time
+
+        prepared = self.adapter.prepare(
+            make_request(process_limit=4)
+        )
+
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import time; time.sleep(300)",
+            ]
+        )
+
+        try:
+            process_handle = int(process._handle)
+
+            self.adapter.assign_process(
+                prepared,
+                process_handle,
+            )
+
+            self.adapter.terminate(
+                prepared,
+                exit_code=17,
+            )
+
+            deadline = time.monotonic() + 5.0
+
+            while (
+                process.poll() is None
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.05)
+
+            self.assertIsNotNone(
+                process.poll(),
+                "Job Object termination did not terminate the assigned process",
+            )
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+
+            self.adapter.release(prepared)
 if __name__ == "__main__":
     unittest.main()
