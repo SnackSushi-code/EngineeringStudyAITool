@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -37,14 +37,22 @@ class IntelligenceRequest:
             raise IntelligenceContractError("task_id must be a UUID")
         if not isinstance(self.user_intent, str) or not self.user_intent.strip():
             raise IntelligenceContractError("user_intent must be a non-empty string")
+
         for item in self.conversation:
             if not isinstance(item, Mapping):
-                raise IntelligenceContractError("conversation entries must be mappings")
+                raise IntelligenceContractError(
+                    "conversation entries must be mappings"
+                )
+
         for key, value in self.metadata.items():
             if not isinstance(key, str) or not key.strip():
-                raise IntelligenceContractError("metadata keys must be non-empty strings")
+                raise IntelligenceContractError(
+                    "metadata keys must be non-empty strings"
+                )
             if not isinstance(value, str):
-                raise IntelligenceContractError("metadata values must be strings")
+                raise IntelligenceContractError(
+                    "metadata values must be strings"
+                )
 
     @property
     def model_request_id(self) -> str:
@@ -55,18 +63,52 @@ class IntelligenceRequest:
         return str(self.task_id)
 
     def to_model_request(self) -> ModelRequest:
+        messages = [
+            ModelMessage(
+                role=ModelRole.USER,
+                content=self.user_intent,
+            )
+        ]
+
+        for item in self.conversation:
+            role_value = item.get("role")
+            content = item.get("content")
+            name = item.get("name")
+
+            if not isinstance(role_value, str) or not role_value.strip():
+                raise IntelligenceContractError(
+                    "conversation role must be a non-empty string"
+                )
+            if not isinstance(content, str):
+                raise IntelligenceContractError(
+                    "conversation content must be a string"
+                )
+            if name is not None and not isinstance(name, str):
+                raise IntelligenceContractError(
+                    "conversation name must be a string when provided"
+                )
+
+            try:
+                role = ModelRole(role_value)
+            except ValueError as exc:
+                raise IntelligenceContractError(
+                    f"unsupported conversation role: {role_value}"
+                ) from exc
+
+            messages.append(
+                ModelMessage(
+                    role=role,
+                    content=content,
+                    name=name,
+                )
+            )
+
         return ModelRequest(
             request_id=self.model_request_id,
             task_id=self.model_task_id,
-            messages=(
-                ModelMessage(
-                    role=ModelRole.USER,
-                    content=self.user_intent,
-                ),
-            ),
+            messages=tuple(messages),
             metadata=dict(self.metadata),
         )
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "contract_version": INTELLIGENCE_CONTRACT_VERSION,
@@ -89,23 +131,37 @@ class IntelligenceDecision:
     def __post_init__(self) -> None:
         if self.decision_type == IntelligenceDecisionType.FINAL_RESPONSE:
             if self.response_text is None or not self.response_text.strip():
-                raise IntelligenceContractError("FINAL_RESPONSE requires response_text")
+                raise IntelligenceContractError(
+                    "FINAL_RESPONSE requires response_text"
+                )
             if self.tool_call is not None:
-                raise IntelligenceContractError("FINAL_RESPONSE cannot contain tool_call")
+                raise IntelligenceContractError(
+                    "FINAL_RESPONSE cannot contain tool_call"
+                )
         elif self.decision_type == IntelligenceDecisionType.TOOL_PROPOSAL:
             if self.tool_call is None:
-                raise IntelligenceContractError("TOOL_PROPOSAL requires tool_call")
+                raise IntelligenceContractError(
+                    "TOOL_PROPOSAL requires tool_call"
+                )
             if self.response_text is not None:
-                raise IntelligenceContractError("TOOL_PROPOSAL cannot contain response_text")
+                raise IntelligenceContractError(
+                    "TOOL_PROPOSAL cannot contain response_text"
+                )
         else:
-            raise IntelligenceContractError(f"Unsupported decision type: {self.decision_type}")
+            raise IntelligenceContractError(
+                f"Unsupported decision type: {self.decision_type}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "contract_version": INTELLIGENCE_CONTRACT_VERSION,
             "decision_type": self.decision_type.value,
             "response_text": self.response_text,
-            "tool_call": None if self.tool_call is None else self.tool_call.to_dict(),
+            "tool_call": (
+                None
+                if self.tool_call is None
+                else self.tool_call.to_dict()
+            ),
         }
 
 
@@ -120,16 +176,24 @@ class IntelligenceResult:
 
     def __post_init__(self) -> None:
         if self.model_request_id != self.request.model_request_id:
-            raise IntelligenceContractError("model_request_id correlation mismatch")
+            raise IntelligenceContractError(
+                "model_request_id correlation mismatch"
+            )
         if self.model_task_id != self.request.model_task_id:
-            raise IntelligenceContractError("model_task_id correlation mismatch")
+            raise IntelligenceContractError(
+                "model_task_id correlation mismatch"
+            )
 
         call = self.decision.tool_call
         if call is not None:
             if call.request_id != self.request.request_id:
-                raise IntelligenceContractError("tool_call request_id correlation mismatch")
+                raise IntelligenceContractError(
+                    "tool_call request_id correlation mismatch"
+                )
             if call.task_id != self.request.task_id:
-                raise IntelligenceContractError("tool_call task_id correlation mismatch")
+                raise IntelligenceContractError(
+                    "tool_call task_id correlation mismatch"
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return {
