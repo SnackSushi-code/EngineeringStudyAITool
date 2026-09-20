@@ -206,12 +206,12 @@ class WorkerProcess:
         self._max_message_bytes = max_message_bytes
         self._context = context or multiprocessing.get_context("spawn")
         self._parent: Connection | None = None
+        self._child: Connection | None = None
         self._process: multiprocessing.Process | None = None
         self._state = WorkerProcessState.NEW
         self._exit_code: int | None = None
         self._request_id: UUID | None = None
         self._task_id: UUID | None = None
-        self._next_sequence = 1
         self._next_sequence = 1
 
     @property
@@ -255,14 +255,48 @@ class WorkerProcess:
         )
         process.daemon = True
         self._process = process
-        process.start()
-        child.close()
+        self._child = child
 
-        self._send(start_message)
-        ready = self._receive(timeout_seconds)
-        self._validate_response(ready, WorkerMessageType.READY, 0)
-        self._state = WorkerProcessState.READY
-        return ready
+        try:
+            process.start()
+
+            self._send(start_message)
+            ready = self._receive(timeout_seconds)
+            self._validate_response(ready, WorkerMessageType.READY, 0)
+
+            # Keep the parent-owned child-side handle alive until the
+            # spawned process has completed the startup handshake.
+            # This is important on Windows spawn.
+            child.close()
+            self._child = None
+
+            self._state = WorkerProcessState.READY
+            return ready
+
+        except TimeoutError:
+            # A startup timeout is recoverable by the caller through
+            # terminate(). Do not mark the worker CRASHED here.
+            #
+            # Close the parent's child-side handle so the parent does
+            # not retain an unnecessary IPC endpoint, while leaving
+            # process lifecycle ownership to terminate().
+            try:
+                child.close()
+            except Exception:
+                pass
+
+            self._child = None
+            raise
+
+        except BaseException:
+            try:
+                child.close()
+            except Exception:
+                pass
+
+            self._child = None
+            self._state = WorkerProcessState.CRASHED
+            raise
 
     def execute(self, payload: dict[str, Any], *, timeout_seconds: float) -> WorkerMessage:
         if self._state != WorkerProcessState.READY:
@@ -331,9 +365,17 @@ class WorkerProcess:
         self._state = WorkerProcessState.STOPPED
 
     def close(self) -> None:
+        if self._child is not None:
+            try:
+                self._child.close()
+            finally:
+                self._child = None
+
         if self._parent is not None:
-            self._parent.close()
-            self._parent = None
+            try:
+                self._parent.close()
+            finally:
+                self._parent = None
 
     def _send(self, message: WorkerMessage) -> None:
         if self._parent is None:
@@ -391,11 +433,6 @@ class WorkerProcess:
         if message.sequence != expected_sequence:
             self._state = WorkerProcessState.CRASHED
             raise WorkerProcessError("unexpected worker response sequence")
-
-    def _consume_sequence(self) -> int:
-        sequence = self._next_sequence
-        self._next_sequence += 1
-        return sequence
 
     def _consume_sequence(self) -> int:
         sequence = self._next_sequence

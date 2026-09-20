@@ -116,3 +116,22 @@ class WorkerProcessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+def test_real_worker_repeated_startup_has_no_spawn_handle_failure() -> None:
+    for _ in range(20):
+        worker = WorkerProcess(
+            worker_id="worker-repeat",
+            handler=echo_handler,
+            context=multiprocessing.get_context("spawn"),
+        )
+
+        try:
+            worker.start(
+                make_start("worker-repeat"),
+                timeout_seconds=5.0,
+            )
+            assert worker.state == WorkerProcessState.READY
+        finally:
+            worker.terminate()
+
+        assert worker.state == WorkerProcessState.STOPPED
