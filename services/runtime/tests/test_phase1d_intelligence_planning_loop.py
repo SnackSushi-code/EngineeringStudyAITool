@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from dataclasses import dataclass
@@ -27,10 +27,49 @@ from anne_runtime.intelligence_planning_loop import (
     IntelligencePlanningLoop,
 )
 from anne_runtime.intelligence_runtime_bridge import IntelligenceRuntimeBridge
+from anne_runtime.intelligence_tool_authority import ToolAuthorityResolver
 from anne_runtime.model_router import ModelRouter
 from anne_runtime.model_service import ModelService
 from anne_runtime.provider_registry import ProviderRegistry
 from anne_runtime.orchestrator import TaskOutcome
+from anne_runtime.tool_contracts import (
+    ToolArgument,
+    ToolArgumentSchema,
+    ToolDescriptor,
+    ToolValueType,
+)
+from anne_runtime.tool_registry import ToolRegistry
+
+
+def make_registry() -> ToolRegistry:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDescriptor(
+            tool_id="test.counter",
+            version="1.0",
+            description="Test counter tool",
+            capabilities=frozenset({"READ"}),
+            arguments=ToolArgumentSchema(
+                arguments=(ToolArgument(
+                        name="value",
+                        value_type=ToolValueType.STRING,
+                        required=True,
+                        description="Test value",
+                    ),)
+            ),
+            required_permissions=frozenset(
+                {PermissionScope(PermissionClass.READ, "test:value")}
+            ),
+            retry_mode=RetryMode.NONE,
+            max_timeout_ms=1000,
+        ),
+        lambda context, arguments: {"value": arguments["value"]},
+    )
+    return registry
+
+
+def make_resolver() -> ToolAuthorityResolver:
+    return ToolAuthorityResolver(make_registry())
 
 
 def make_request() -> IntelligenceRequest:
@@ -59,45 +98,16 @@ def make_task_request(request: IntelligenceRequest) -> TaskRequest:
     )
 
 
-def make_call(request: IntelligenceRequest) -> ToolCall:
-    return ToolCall(
-        schema_version="1.0",
-        request_id=request.request_id,
-        task_id=request.task_id,
-        tool="test.counter",
-        operation="execute",
-        arguments={"value": "hello"},
-        permissions=(
-            PermissionScope(PermissionClass.READ, "test:value"),
-        ),
-        timeout_ms=1000,
-        retry_mode=RetryMode.NONE,
-        idempotency_key=str(uuid4()),
-    )
-
-
 def tool_payload(request: IntelligenceRequest) -> dict:
-    call = make_call(request)
     return {
         "contract_version": "1.0",
         "decision_type": "TOOL_PROPOSAL",
         "tool_call": {
-            "schema_version": call.schema_version,
-            "request_id": str(call.request_id),
-            "task_id": str(call.task_id),
-            "tool": call.tool,
-            "operation": call.operation,
-            "arguments": dict(call.arguments),
-            "permissions": [
-                {
-                    "permission_class": permission.permission_class.value,
-                    "scope": permission.scope,
-                }
-                for permission in call.permissions
-            ],
-            "timeout_ms": call.timeout_ms,
-            "retry_mode": call.retry_mode.value,
-            "idempotency_key": call.idempotency_key,
+            "request_id": str(request.request_id),
+            "task_id": str(request.task_id),
+            "tool": "test.counter",
+            "operation": "execute",
+            "arguments": {"value": "hello"},
         },
     }
 
@@ -169,7 +179,7 @@ def make_loop(responder, outcomes):
         outcomes=list(outcomes),
         calls=[],
     )
-    bridge = IntelligenceRuntimeBridge(recorder)
+    bridge = IntelligenceRuntimeBridge(recorder, make_resolver())
     return IntelligencePlanningLoop(
         intelligence,
         bridge,
@@ -302,15 +312,6 @@ def test_cancellation_stops_before_next_model_iteration():
     def responder(model_request):
         return json.dumps(tool_payload(request))
 
-    loop, recorder = make_loop(
-        responder,
-        [success_outcome(request)],
-    )
-
-    outcome_holder = []
-
-    # The first runtime outcome is successful; request cancellation before the
-    # next planning iteration to verify the loop does not invoke the model again.
     class CancellingRecorder(RecordingTaskOrchestrator):
         def run(self, request, call, cancellation=None):
             result = super().run(request, call, cancellation)
@@ -323,7 +324,7 @@ def test_cancellation_stops_before_next_model_iteration():
     )
     loop = IntelligencePlanningLoop(
         IntelligenceOrchestrator(make_service(responder)),
-        IntelligenceRuntimeBridge(cancelling_recorder),
+        IntelligenceRuntimeBridge(cancelling_recorder, make_resolver()),
         max_iterations=4,
     )
 

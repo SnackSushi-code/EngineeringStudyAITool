@@ -5,7 +5,6 @@ from enum import StrEnum
 from typing import Any, Mapping
 from uuid import UUID
 
-from .contracts import ToolCall
 from .model_contracts import ModelMessage, ModelRequest, ModelRole
 
 INTELLIGENCE_CONTRACT_VERSION = "1.0"
@@ -13,6 +12,25 @@ INTELLIGENCE_CONTRACT_VERSION = "1.0"
 
 class IntelligenceContractError(ValueError):
     """Invalid intelligence-layer contract."""
+
+
+@dataclass(frozen=True)
+class IntelligenceToolProposal:
+    """Model-owned tool intent; runtime authority is resolved separately."""
+    request_id: UUID
+    task_id: UUID
+    tool: str
+    operation: str
+    arguments: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        if not self.tool.strip():
+            raise IntelligenceContractError("tool must be nonblank")
+        if not self.operation.strip():
+            raise IntelligenceContractError("operation must be nonblank")
+        if not isinstance(self.arguments, Mapping):
+            raise IntelligenceContractError("arguments must be a mapping")
+        object.__setattr__(self, "arguments", dict(self.arguments))
 
 
 class IntelligenceDecisionType(StrEnum):
@@ -126,7 +144,7 @@ class IntelligenceDecision:
 
     decision_type: IntelligenceDecisionType
     response_text: str | None = None
-    tool_call: ToolCall | None = None
+    tool_call: IntelligenceToolProposal | None = None
 
     def __post_init__(self) -> None:
         if self.decision_type == IntelligenceDecisionType.FINAL_RESPONSE:

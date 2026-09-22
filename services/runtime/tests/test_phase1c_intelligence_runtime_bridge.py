@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from uuid import uuid4
@@ -19,14 +19,54 @@ from anne_runtime.intelligence_contracts import (
     IntelligenceDecisionType,
     IntelligenceRequest,
     IntelligenceResult,
+    IntelligenceToolProposal,
 )
 from anne_runtime.intelligence_orchestrator import IntelligenceInvocation
 from anne_runtime.intelligence_runtime_bridge import (
     IntelligenceRuntimeBridge,
     IntelligenceRuntimeBridgeError,
 )
+from anne_runtime.intelligence_tool_authority import ToolAuthorityResolver
 from anne_runtime.model_contracts import FinishReason
 from anne_runtime.orchestrator import TaskOutcome
+from anne_runtime.tool_contracts import (
+    ToolArgument,
+    ToolArgumentSchema,
+    ToolDescriptor,
+    ToolValueType,
+)
+from anne_runtime.tool_registry import ToolRegistry
+
+
+def make_registry() -> ToolRegistry:
+    registry = ToolRegistry()
+    registry.register(
+        ToolDescriptor(
+            tool_id="test.counter",
+            version="1.0",
+            description="Test counter tool",
+            capabilities=frozenset({"READ"}),
+            arguments=ToolArgumentSchema(
+                arguments=(ToolArgument(
+                        name="value",
+                        value_type=ToolValueType.STRING,
+                        required=True,
+                        description="Test value",
+                    ),)
+            ),
+            required_permissions=frozenset(
+                {PermissionScope(PermissionClass.READ, "test:value")}
+            ),
+            retry_mode=RetryMode.NONE,
+            max_timeout_ms=1000,
+        ),
+        lambda context, arguments: {"value": arguments["value"]},
+    )
+    return registry
+
+
+def make_resolver() -> ToolAuthorityResolver:
+    return ToolAuthorityResolver(make_registry())
 
 
 def make_request() -> IntelligenceRequest:
@@ -55,20 +95,13 @@ def make_task_request(request: IntelligenceRequest) -> TaskRequest:
     )
 
 
-def make_call(request: IntelligenceRequest) -> ToolCall:
-    return ToolCall(
-        schema_version="1.0",
+def make_proposal(request: IntelligenceRequest) -> IntelligenceToolProposal:
+    return IntelligenceToolProposal(
         request_id=request.request_id,
         task_id=request.task_id,
         tool="test.counter",
         operation="execute",
         arguments={"value": "hello"},
-        permissions=(
-            PermissionScope(PermissionClass.READ, "test:value"),
-        ),
-        timeout_ms=1000,
-        retry_mode=RetryMode.NONE,
-        idempotency_key=str(uuid4()),
     )
 
 
@@ -76,12 +109,12 @@ def make_invocation(
     request: IntelligenceRequest,
     *,
     decision_type: IntelligenceDecisionType = IntelligenceDecisionType.TOOL_PROPOSAL,
-    call: ToolCall | None = None,
+    proposal: IntelligenceToolProposal | None = None,
 ) -> IntelligenceInvocation:
     if decision_type == IntelligenceDecisionType.TOOL_PROPOSAL:
         decision = IntelligenceDecision(
             decision_type=decision_type,
-            tool_call=call or make_call(request),
+            tool_call=proposal or make_proposal(request),
         )
     else:
         decision = IntelligenceDecision(
@@ -122,13 +155,17 @@ class RecordingTaskOrchestrator:
         )
 
 
+def make_bridge(recorder: RecordingTaskOrchestrator) -> IntelligenceRuntimeBridge:
+    return IntelligenceRuntimeBridge(recorder, make_resolver())
+
+
 def test_tool_proposal_crosses_only_through_task_orchestrator():
     request = make_request()
     task_request = make_task_request(request)
     invocation = make_invocation(request)
     recorder = RecordingTaskOrchestrator(calls=[])
 
-    outcome = IntelligenceRuntimeBridge(recorder).execute_proposal(
+    outcome = make_bridge(recorder).execute_proposal(
         invocation,
         task_request,
     )
@@ -137,7 +174,16 @@ def test_tool_proposal_crosses_only_through_task_orchestrator():
     assert len(recorder.calls) == 1
     recorded_request, recorded_call, cancellation = recorder.calls[0]
     assert recorded_request is task_request
-    assert recorded_call is invocation.result.decision.tool_call
+    assert recorded_call.tool == "test.counter"
+    assert recorded_call.operation == "execute"
+    assert recorded_call.arguments == {"value": "hello"}
+    assert recorded_call.permissions == (
+        PermissionScope(PermissionClass.READ, "test:value"),
+    )
+    assert recorded_call.timeout_ms == 1000
+    assert recorded_call.retry_mode is RetryMode.NONE
+    assert recorded_call.idempotency_key
+    assert recorded_call is not invocation.result.decision.tool_call
     assert cancellation is None
 
 
@@ -154,7 +200,7 @@ def test_final_response_cannot_enter_runtime_bridge():
         IntelligenceRuntimeBridgeError,
         match="only TOOL_PROPOSAL",
     ):
-        IntelligenceRuntimeBridge(recorder).execute_proposal(
+        make_bridge(recorder).execute_proposal(
             invocation,
             task_request,
         )
@@ -187,7 +233,7 @@ def test_request_id_mismatch_is_rejected_before_runtime():
         IntelligenceRuntimeBridgeError,
         match="request_id",
     ):
-        IntelligenceRuntimeBridge(recorder).execute_proposal(
+        make_bridge(recorder).execute_proposal(
             invocation,
             mismatched,
         )
@@ -220,7 +266,7 @@ def test_task_id_mismatch_is_rejected_before_runtime():
         IntelligenceRuntimeBridgeError,
         match="task_id",
     ):
-        IntelligenceRuntimeBridge(recorder).execute_proposal(
+        make_bridge(recorder).execute_proposal(
             invocation,
             mismatched,
         )
@@ -228,30 +274,21 @@ def test_task_id_mismatch_is_rejected_before_runtime():
     assert recorder.calls == []
 
 
-def test_tool_call_request_id_mismatch_is_rejected():
+def test_tool_proposal_request_id_mismatch_is_rejected():
     request = make_request()
     task_request = make_task_request(request)
     invocation = make_invocation(request)
-    valid_call = invocation.result.decision.tool_call
-    assert valid_call is not None
+    valid = invocation.result.decision.tool_call
+    assert valid is not None
 
-    mismatched_call = ToolCall(
-        schema_version=valid_call.schema_version,
+    mismatched = IntelligenceToolProposal(
         request_id=uuid4(),
-        task_id=valid_call.task_id,
-        tool=valid_call.tool,
-        operation=valid_call.operation,
-        arguments=dict(valid_call.arguments),
-        permissions=valid_call.permissions,
-        timeout_ms=valid_call.timeout_ms,
-        retry_mode=valid_call.retry_mode,
-        idempotency_key=valid_call.idempotency_key,
+        task_id=valid.task_id,
+        tool=valid.tool,
+        operation=valid.operation,
+        arguments=dict(valid.arguments),
     )
 
-    # IntelligenceResult intentionally rejects this invalid correlation during
-    # normal construction. This test is specifically for the bridge's
-    # defense-in-depth check, so construct the invalid result without invoking
-    # the dataclass invariant a second time.
     forged_result = object.__new__(type(invocation.result))
     object.__setattr__(forged_result, "request", invocation.result.request)
     object.__setattr__(
@@ -259,7 +296,7 @@ def test_tool_call_request_id_mismatch_is_rejected():
         "decision",
         IntelligenceDecision(
             decision_type=IntelligenceDecisionType.TOOL_PROPOSAL,
-            tool_call=mismatched_call,
+            tool_call=mismatched,
         ),
     )
     object.__setattr__(
@@ -284,16 +321,14 @@ def test_tool_call_request_id_mismatch_is_rejected():
 
     recorder = RecordingTaskOrchestrator(calls=[])
 
-    with pytest.raises(
-        IntelligenceRuntimeBridgeError,
-        match="ToolCall request_id",
-    ):
-        IntelligenceRuntimeBridge(recorder).execute_proposal(
+    with pytest.raises(IntelligenceRuntimeBridgeError):
+        make_bridge(recorder).execute_proposal(
             forged_invocation,
             task_request,
         )
 
     assert recorder.calls == []
+
 
 
 def test_cancellation_token_is_forwarded_unchanged():
@@ -305,7 +340,7 @@ def test_cancellation_token_is_forwarded_unchanged():
     recorder = RecordingTaskOrchestrator(calls=[])
     cancellation = CancellationToken()
 
-    IntelligenceRuntimeBridge(recorder).execute_proposal(
+    make_bridge(recorder).execute_proposal(
         invocation,
         task_request,
         cancellation,

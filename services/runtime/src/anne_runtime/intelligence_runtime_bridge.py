@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Protocol
 
@@ -31,8 +31,9 @@ class IntelligenceRuntimeBridge:
     changes policy, calls ToolExecutor, or executes handlers directly.
     """
 
-    def __init__(self, task_orchestrator: TaskOrchestratorPort) -> None:
+    def __init__(self, task_orchestrator: TaskOrchestratorPort, authority_resolver: ToolAuthorityResolver) -> None:
         self._task_orchestrator = task_orchestrator
+        self._authority_resolver = authority_resolver
 
     def execute_proposal(
         self,
@@ -51,10 +52,10 @@ class IntelligenceRuntimeBridge:
                 "only TOOL_PROPOSAL decisions can enter the runtime bridge"
             )
 
-        call = decision.tool_call
-        if call is None:
+        proposal = decision.tool_call
+        if proposal is None:
             raise IntelligenceRuntimeBridgeError(
-                "TOOL_PROPOSAL is missing its ToolCall"
+                "TOOL_PROPOSAL is missing its tool proposal"
             )
 
         if task_request.request_id != invocation.result.request.request_id:
@@ -67,18 +68,15 @@ class IntelligenceRuntimeBridge:
                 "TaskRequest task_id does not match IntelligenceRequest"
             )
 
-        if call.request_id != task_request.request_id:
+        if proposal.request_id != task_request.request_id:
             raise IntelligenceRuntimeBridgeError(
-                "ToolCall request_id does not match TaskRequest"
+                "tool proposal request_id does not match TaskRequest"
             )
 
-        if call.task_id != task_request.task_id:
+        if proposal.task_id != task_request.task_id:
             raise IntelligenceRuntimeBridgeError(
-                "ToolCall task_id does not match TaskRequest"
+                "tool proposal task_id does not match TaskRequest"
             )
 
-        return self._task_orchestrator.run(
-            task_request,
-            call,
-            cancellation,
-        )
+        resolved = self._authority_resolver.resolve(proposal)
+        return self._task_orchestrator.run(task_request, resolved.call, cancellation)
