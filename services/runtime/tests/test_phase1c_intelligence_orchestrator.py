@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from dataclasses import replace
@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import pytest
 
-from anne_runtime.contracts import RetryMode
 from anne_runtime.deterministic_provider import DeterministicModelProvider
 from anne_runtime.intelligence_contracts import (
     IntelligenceDecisionType,
@@ -169,22 +168,12 @@ def valid_tool_payload(request: IntelligenceRequest) -> dict:
         "contract_version": "1.0",
         "decision_type": "TOOL_PROPOSAL",
         "tool_call": {
-            "schema_version": "1.0",
             "request_id": str(request.request_id),
             "task_id": str(request.task_id),
             "tool": "test.counter",
             "operation": "execute",
             "arguments": {"value": "hello"},
-            "permissions": [
-                {
-                    "permission_class": "READ",
-                    "scope": "test:value",
-                }
-            ],
-            "timeout_ms": 1000,
-            "retry_mode": RetryMode.NONE.value,
-            "idempotency_key": str(uuid4()),
-        },
+       },
     }
 
 

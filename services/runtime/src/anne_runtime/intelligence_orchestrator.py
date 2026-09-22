@@ -1,18 +1,19 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 from uuid import UUID
 
-from .contracts import PermissionClass, PermissionScope, RetryMode, ToolCall
 from .intelligence_contracts import (
     IntelligenceContractError,
     IntelligenceDecision,
     IntelligenceDecisionType,
     IntelligenceRequest,
     IntelligenceResult,
+    IntelligenceToolProposal,
 )
+from .intelligence_tool_authority import ToolCapabilityCatalog
 from .model_contracts import FinishReason
 from .model_service import ModelService
 
@@ -42,8 +43,13 @@ class IntelligenceOrchestrator:
 
     RESPONSE_CONTRACT_VERSION = "1.0"
 
-    def __init__(self, model_service: ModelService) -> None:
+    def __init__(
+        self,
+        model_service: ModelService,
+        capability_catalog: ToolCapabilityCatalog | None = None,
+    ) -> None:
         self._model_service = model_service
+        self._capability_catalog = capability_catalog
 
     def process(self, request: IntelligenceRequest) -> IntelligenceInvocation:
         if not isinstance(request, IntelligenceRequest):
@@ -52,6 +58,14 @@ class IntelligenceOrchestrator:
             )
 
         model_request = request.to_model_request()
+        if self._capability_catalog is not None:
+            model_request = replace(
+                model_request,
+                metadata={
+                    **dict(model_request.metadata),
+                    "anne.tool_catalog": self._capability_catalog.as_metadata_json(),
+                },
+            )
 
         try:
             invocation = self._model_service.invoke(model_request)
@@ -66,6 +80,7 @@ class IntelligenceOrchestrator:
             raise IntelligenceOrchestrationError(
                 "model response request_id correlation mismatch"
             )
+
         if response.task_id != request.model_task_id:
             raise IntelligenceOrchestrationError(
                 "model response task_id correlation mismatch"
@@ -107,9 +122,7 @@ class IntelligenceOrchestrator:
             ) from exc
 
         if not isinstance(payload, Mapping):
-            raise IntelligenceOrchestrationError(
-                "model response must be a JSON object"
-            )
+            raise IntelligenceOrchestrationError("model response must be a JSON object")
 
         version = payload.get(
             "contract_version",
@@ -121,9 +134,7 @@ class IntelligenceOrchestrator:
             )
 
         try:
-            decision_type = IntelligenceDecisionType(
-                payload.get("decision_type")
-            )
+            decision_type = IntelligenceDecisionType(payload.get("decision_type"))
         except (ValueError, TypeError) as exc:
             raise IntelligenceOrchestrationError(
                 "model response contains an unsupported decision_type"
@@ -173,7 +184,43 @@ class IntelligenceOrchestrator:
     def _decode_tool_call(
         raw: Mapping[str, Any],
         request: IntelligenceRequest,
-    ) -> ToolCall:
+    ) -> IntelligenceToolProposal:
+        if not isinstance(raw, Mapping):
+            raise TypeError("tool_call must be an object")
+
+        allowed = {
+            "request_id",
+            "task_id",
+            "tool",
+            "operation",
+            "arguments",
+        }
+        forbidden = {
+            "schema_version",
+            "permissions",
+            "timeout_ms",
+            "retry_mode",
+            "idempotency_key",
+        }
+
+        present = sorted(set(raw) & forbidden)
+        if present:
+            raise IntelligenceContractError(
+                "model cannot supply authority fields: " + ", ".join(present)
+            )
+
+        unknown = sorted(set(raw) - allowed)
+        if unknown:
+            raise IntelligenceContractError(
+                "unknown tool proposal fields: " + ", ".join(unknown)
+            )
+
+        missing = sorted(allowed - set(raw))
+        if missing:
+            raise IntelligenceContractError(
+                "missing tool proposal fields: " + ", ".join(missing)
+            )
+
         request_id = UUID(str(raw["request_id"]))
         task_id = UUID(str(raw["task_id"]))
 
@@ -182,31 +229,14 @@ class IntelligenceOrchestrator:
                 "tool proposal correlation IDs must match IntelligenceRequest"
             )
 
-        raw_permissions = raw["permissions"]
-        if not isinstance(raw_permissions, list):
-            raise TypeError("permissions must be a list")
-
-        permissions = tuple(
-            PermissionScope(
-                permission_class=PermissionClass(permission["permission_class"]),
-                scope=str(permission["scope"]),
-            )
-            for permission in raw_permissions
-        )
-
-        arguments = raw.get("arguments", {})
+        arguments = raw["arguments"]
         if not isinstance(arguments, Mapping):
             raise TypeError("arguments must be an object")
 
-        return ToolCall(
-            schema_version=str(raw.get("schema_version", "1.0")),
+        return IntelligenceToolProposal(
             request_id=request_id,
             task_id=task_id,
             tool=str(raw["tool"]),
             operation=str(raw["operation"]),
             arguments=dict(arguments),
-            permissions=permissions,
-            timeout_ms=int(raw["timeout_ms"]),
-            retry_mode=RetryMode(str(raw.get("retry_mode", "none"))),
-            idempotency_key=str(raw["idempotency_key"]),
         )
