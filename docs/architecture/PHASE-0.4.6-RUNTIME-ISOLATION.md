@@ -1,4 +1,4 @@
-﻿# Phase 0.4.6 â€” Runtime Isolation and Process Supervision
+# Phase 0.4.6 â€” Runtime Isolation and Process Supervision
 
 ## 1. Objective
 
@@ -191,4 +191,3 @@ The architecture must not claim identical sandbox strength across Windows, Linux
 ## 13. Phase boundary
 
 This architecture package defines the contract. Actual OS-level sandbox enforcement is implementation work and must not be represented as complete until tests demonstrate it.
-

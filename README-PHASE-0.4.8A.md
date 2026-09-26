@@ -1,4 +1,4 @@
-﻿# Phase 0.4.8-A â€” Platform Enforcement Contract
+# Phase 0.4.8-A â€” Platform Enforcement Contract
 
 This package defines the platform-neutral contract for actual OS/platform security enforcement.
 
@@ -36,4 +36,3 @@ Run from repository root:
 ```powershell
 python -m pytest -q tests/runtime/test_platform_enforcement_contract.py
 ```
-
