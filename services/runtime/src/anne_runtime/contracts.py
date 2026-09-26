@@ -22,13 +22,15 @@ class TaskState(StrEnum):
     TIMED_OUT = "TIMED_OUT"
 
 
-TERMINAL_STATES = frozenset({
-    TaskState.SUCCEEDED,
-    TaskState.FAILED,
-    TaskState.CANCELLED,
-    TaskState.DENIED,
-    TaskState.TIMED_OUT,
-})
+TERMINAL_STATES = frozenset(
+    {
+        TaskState.SUCCEEDED,
+        TaskState.FAILED,
+        TaskState.CANCELLED,
+        TaskState.DENIED,
+        TaskState.TIMED_OUT,
+    }
+)
 
 
 class PermissionClass(StrEnum):
@@ -62,7 +64,10 @@ class PermissionScope:
             raise ValueError("Permission scope cannot be empty")
 
     def to_dict(self) -> dict[str, str]:
-        return {"class": self.permission_class.value, "scope": self.scope}
+        return {
+            "class": self.permission_class.value,
+            "scope": self.scope,
+        }
 
 
 @dataclass(frozen=True)
@@ -93,7 +98,11 @@ class TaskRequest:
             "requested_capabilities": list(self.requested_capabilities),
             "approval_context": {
                 "required": self.approval_required,
-                "approval_id": str(self.approval_id) if self.approval_id else None,
+                "approval_id": (
+                    str(self.approval_id)
+                    if self.approval_id
+                    else None
+                ),
             },
             "input_artifacts": list(self.input_artifacts),
         }
@@ -120,7 +129,10 @@ class ToolCall:
             "tool": self.tool,
             "operation": self.operation,
             "arguments": dict(self.arguments),
-            "permissions": [p.to_dict() for p in self.permissions],
+            "permissions": [
+                permission.to_dict()
+                for permission in self.permissions
+            ],
             "timeout_ms": self.timeout_ms,
             "retry": {
                 "mode": self.retry_mode.value,
@@ -144,8 +156,14 @@ class PermissionRequest:
         return {
             "schema_version": self.schema_version,
             "request_id": str(self.request_id),
-            "principal": {"type": self.principal_type, "id": self.principal_id},
-            "action": {"class": self.permission_class.value, "target": self.target},
+            "principal": {
+                "type": self.principal_type,
+                "id": self.principal_id,
+            },
+            "action": {
+                "class": self.permission_class.value,
+                "target": self.target,
+            },
             "reason": self.reason,
             "task_id": str(self.task_id),
         }
@@ -161,7 +179,11 @@ class PermissionDecisionRecord:
     def to_dict(self) -> dict[str, Any]:
         return {
             "decision": self.decision.value,
-            "approval_id": str(self.approval_id) if self.approval_id else None,
+            "approval_id": (
+                str(self.approval_id)
+                if self.approval_id
+                else None
+            ),
             "policy_version": self.policy_version,
             "expires_at": self.expires_at,
         }
@@ -189,7 +211,56 @@ class ToolResult:
                 f"ToolResult status must be terminal, got {self.status}"
             )
 
+    @staticmethod
+    def _serialized_error(
+        error: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Convert the internal runtime error representation into the
+        externally serialized ToolResult schema representation.
+
+        Internal runtime error codes may use short or Python-style names.
+        The external ToolResult schema requires codes to use the ANN_E_
+        prefix followed by uppercase characters, digits, or underscores.
+        """
+        serialized = dict(error)
+
+        code = serialized.get("code")
+
+        if isinstance(code, str) and code:
+            if code.startswith("ANN_E_"):
+                serialized["code"] = (
+                    f"ANN_E_{code.removeprefix('ANN_E_').upper()}"
+                )
+            else:
+                serialized["code"] = f"ANN_E_{code.upper()}"
+
+        return serialized
+
+    @staticmethod
+    def _serialized_validation_state(state: str) -> str:
+        """
+        Convert internal validation terminology to the external
+        ToolResult schema terminology.
+        """
+        if state == "PASSED":
+            return "VALIDATED"
+
+        return state
+
     def to_dict(self) -> dict[str, Any]:
+        serialized_error = (
+            self._serialized_error(self.error)
+            if self.error
+            else None
+        )
+
+        serialized_validation_state = (
+            self._serialized_validation_state(
+                self.validation_state
+            )
+        )
+
         return {
             "schema_version": self.schema_version,
             "request_id": str(self.request_id),
@@ -198,14 +269,17 @@ class ToolResult:
             "result": dict(self.result),
             "artifacts": list(self.artifacts),
             "validation": {
-                "state": self.validation_state,
-                "checks": [dict(c) for c in self.validation_checks],
+                "state": serialized_validation_state,
+                "checks": [
+                    dict(check)
+                    for check in self.validation_checks
+                ],
             },
             "provenance": {
                 "tool": self.tool,
                 "tool_version": self.tool_version,
                 "adapter_version": self.adapter_version,
             },
-            "error": dict(self.error) if self.error else None,
+            "error": serialized_error,
             "logs": list(self.logs),
         }

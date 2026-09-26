@@ -6,6 +6,7 @@ from .cancellation import CancellationToken
 from .contracts import TaskRequest, ToolCall
 from .intelligence_contracts import IntelligenceDecisionType
 from .intelligence_orchestrator import IntelligenceInvocation
+from .intelligence_tool_authority import ToolAuthorityResolver
 from .orchestrator import TaskOrchestrator, TaskOutcome
 
 
@@ -31,7 +32,11 @@ class IntelligenceRuntimeBridge:
     changes policy, calls ToolExecutor, or executes handlers directly.
     """
 
-    def __init__(self, task_orchestrator: TaskOrchestratorPort, authority_resolver: ToolAuthorityResolver) -> None:
+    def __init__(
+        self,
+        task_orchestrator: TaskOrchestratorPort,
+        authority_resolver: ToolAuthorityResolver,
+    ) -> None:
         self._task_orchestrator = task_orchestrator
         self._authority_resolver = authority_resolver
 

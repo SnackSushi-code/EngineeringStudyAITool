@@ -32,6 +32,16 @@ class IntelligenceToolProposal:
             raise IntelligenceContractError("arguments must be a mapping")
         object.__setattr__(self, "arguments", dict(self.arguments))
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize model-owned intent only; never serialize runtime authority."""
+        return {
+            "request_id": str(self.request_id),
+            "task_id": str(self.task_id),
+            "tool": self.tool,
+            "operation": self.operation,
+            "arguments": dict(self.arguments),
+        }
+
 
 class IntelligenceDecisionType(StrEnum):
     FINAL_RESPONSE = "FINAL_RESPONSE"

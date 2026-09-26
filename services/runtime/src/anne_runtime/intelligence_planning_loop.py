@@ -5,8 +5,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from .cancellation import CancellationToken
-from .contracts import TaskRequest, TaskState, ToolCall
-from .intelligence_contracts import IntelligenceDecisionType, IntelligenceRequest
+from .contracts import TaskRequest, TaskState
+from .intelligence_contracts import (
+    IntelligenceDecisionType,
+    IntelligenceRequest,
+    IntelligenceToolProposal,
+)
 from .intelligence_orchestrator import IntelligenceInvocation, IntelligenceOrchestrator
 from .intelligence_runtime_bridge import IntelligenceRuntimeBridge
 from .orchestrator import TaskOutcome
@@ -123,10 +127,10 @@ class IntelligencePlanningLoop:
                     f"unsupported decision type: {decision.decision_type}"
                 )
 
-            call = decision.tool_call
-            if call is None:
+            proposal = decision.tool_call
+            if proposal is None:
                 raise IntelligencePlanningError(
-                    "TOOL_PROPOSAL is missing its ToolCall"
+                    "TOOL_PROPOSAL is missing its tool proposal"
                 )
 
             task_outcome = self._runtime_bridge.execute_proposal(
@@ -161,7 +165,7 @@ class IntelligencePlanningLoop:
 
             current_request = self._request_after_tool(
                 current_request,
-                call,
+                proposal,
                 task_outcome,
             )
 
@@ -175,13 +179,13 @@ class IntelligencePlanningLoop:
     @staticmethod
     def _request_after_tool(
         request: IntelligenceRequest,
-        call: ToolCall,
+        proposal: IntelligenceToolProposal,
         outcome: TaskOutcome,
     ) -> IntelligenceRequest:
         payload: dict[str, Any] = {
             "status": outcome.state.value,
-            "tool": call.tool,
-            "operation": call.operation,
+            "tool": proposal.tool,
+            "operation": proposal.operation,
         }
 
         if outcome.result is not None:
@@ -206,15 +210,15 @@ class IntelligencePlanningLoop:
                 "content": json.dumps(
                     {
                         "decision_type": IntelligenceDecisionType.TOOL_PROPOSAL.value,
-                        "tool": call.tool,
-                        "operation": call.operation,
+                        "tool": proposal.tool,
+                        "operation": proposal.operation,
                     },
                     sort_keys=True,
                 ),
             },
             {
                 "role": "tool",
-                "name": call.tool,
+                "name": proposal.tool,
                 "content": json.dumps(payload, sort_keys=True),
             },
         )
