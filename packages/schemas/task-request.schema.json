@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/task-request.schema.json",
+  "title": "Ann-E TaskRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "task_id",
+    "created_at",
+    "source",
+    "user_intent",
+    "priority",
+    "workspace_id",
+    "requested_capabilities",
+    "approval_context",
+    "input_artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.json#/$defs/schemaVersion"
+    },
+    "request_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "task_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "created_at": {
+      "$ref": "common.json#/$defs/timestamp"
+    },
+    "source": {
+      "$ref": "common.json#/$defs/source"
+    },
+    "user_intent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "normal",
+        "high",
+        "critical"
+      ]
+    },
+    "workspace_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "requested_capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "approval_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "approval_id"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "approval_id": {
+          "anyOf": [
+            {
+              "$ref": "common.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "input_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

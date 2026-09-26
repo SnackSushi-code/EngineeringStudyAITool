@@ -2,7 +2,7 @@
 
 Ann-E is a desktop-first personal AI engineering companion combining AI assistance, engineering workflows, study tools, persistent learning, a Colony multi-agent environment, voice, and security/auditing.
 
-## Phase 0 — Foundation
+## Phase 0 â€” Foundation
 
 Phase 0 deliberately establishes architecture and safety boundaries before feature implementation.
 
@@ -26,14 +26,15 @@ See:
 
 ## Phase 0 status
 
-- [x] Architecture baseline
-- [x] Security boundary baseline
-- [x] Threat model baseline
-- [x] Repository scaffold
-- [x] ADR baseline
-- [x] Quality gates
-- [ ] Desktop runtime
-- [ ] AI provider implementation
-- [ ] Tool broker implementation
+Phase 0 foundation is in the production completion-gate stage.
 
-Feature implementation begins only after the Phase 0 review is accepted.
+The current Phase 0 enforcement baseline includes:
+
+- runtime execution contracts;
+- authorization and supervisor boundaries;
+- Windows Job Object process enforcement;
+- explicit unsupported enforcement gaps;
+- supervisor-to-platform enforcement integration;
+- cleanup and timeout enforcement paths.
+
+Phase 0 is considered complete only after the repository passes the documented completion gate in `docs/architecture/PHASE-0-COMPLETION-GATE.md`.

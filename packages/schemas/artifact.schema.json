@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/artifact.schema.json",
+  "title": "Ann-E Artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_id",
+    "content_hash",
+    "media_type",
+    "creator_task_id",
+    "workspace_id",
+    "created_at",
+    "provenance",
+    "validation_state",
+    "parent_artifacts",
+    "retention_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.json#/$defs/schemaVersion"
+    },
+    "artifact_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "content_hash": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "media_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "creator_task_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "workspace_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "created_at": {
+      "$ref": "common.json#/$defs/timestamp"
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "validation_state": {
+      "$ref": "common.json#/$defs/validationState"
+    },
+    "parent_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "retention_policy": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

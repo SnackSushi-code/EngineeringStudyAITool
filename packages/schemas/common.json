@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/common.json",
+  "title": "Ann-E Common Contract Definitions",
+  "type": "object",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "permissionClass": {
+      "type": "string",
+      "enum": [
+        "READ",
+        "WRITE",
+        "EXECUTE",
+        "NETWORK",
+        "DESTRUCTIVE",
+        "SECURITY_SENSITIVE",
+        "SELF_UPDATE"
+      ]
+    },
+    "taskTerminalState": {
+      "type": "string",
+      "enum": [
+        "SUCCEEDED",
+        "FAILED",
+        "CANCELLED",
+        "DENIED",
+        "TIMED_OUT"
+      ]
+    },
+    "taskActiveState": {
+      "type": "string",
+      "enum": [
+        "QUEUED",
+        "PLANNING",
+        "WAITING_APPROVAL",
+        "RUNNING",
+        "VALIDATING",
+        "ROLLING_BACK"
+      ]
+    },
+    "validationState": {
+      "type": "string",
+      "enum": [
+        "GENERATED",
+        "PARSED",
+        "VALIDATED",
+        "SIMULATED",
+        "EXPERIMENTALLY_VERIFIED",
+        "NOT_APPLICABLE"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "api",
+        "agent",
+        "system"
+      ]
+    },
+    "principalType": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "user",
+        "system",
+        "integration"
+      ]
+    }
+  }
+}

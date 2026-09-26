@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/error.schema.json",
+  "title": "Ann-E Error",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "code",
+    "message",
+    "retryable",
+    "request_id",
+    "task_id",
+    "details",
+    "recovery"
+  ],
+  "properties": {
+    "code": {
+      "type": "string",
+      "pattern": "^ANN_E_[A-Z0-9_]+$"
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "request_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "task_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "details": {
+      "type": "object"
+    },
+    "recovery": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

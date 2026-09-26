@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/tool-call.schema.json",
+  "title": "Ann-E ToolCall",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "task_id",
+    "tool",
+    "operation",
+    "arguments",
+    "permissions",
+    "timeout_ms",
+    "retry"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.json#/$defs/schemaVersion"
+    },
+    "request_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "task_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "tool": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_.-]+$"
+    },
+    "operation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "arguments": {
+      "type": "object"
+    },
+    "permissions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "class",
+          "scope"
+        ],
+        "properties": {
+          "class": {
+            "$ref": "common.json#/$defs/permissionClass"
+          },
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600000
+    },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "idempotency_key"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "none",
+            "safe"
+          ]
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

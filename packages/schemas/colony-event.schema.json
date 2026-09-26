@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/colony-event.schema.json",
+  "title": "Ann-E ColonyEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "timestamp",
+    "simulation_tick",
+    "type",
+    "agent_id",
+    "task_id",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.json#/$defs/schemaVersion"
+    },
+    "event_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "timestamp": {
+      "$ref": "common.json#/$defs/timestamp"
+    },
+    "simulation_tick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "AGENT_CREATED",
+        "AGENT_MOVED",
+        "TASK_ASSIGNED",
+        "TASK_STARTED",
+        "TASK_COMPLETED",
+        "WARNING",
+        "ERROR",
+        "STATE_CHANGED"
+      ]
+    },
+    "agent_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "task_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "payload": {
+      "type": "object"
+    }
+  }
+}

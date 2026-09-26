@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ann-e.local/schemas/permission-request.schema.json",
+  "title": "Ann-E PermissionRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "principal",
+    "action",
+    "reason",
+    "task_id"
+  ],
+  "properties": {
+    "schema_version": {
+      "$ref": "common.json#/$defs/schemaVersion"
+    },
+    "request_id": {
+      "$ref": "common.json#/$defs/uuid"
+    },
+    "principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "$ref": "common.json#/$defs/principalType"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "target"
+      ],
+      "properties": {
+        "class": {
+          "$ref": "common.json#/$defs/permissionClass"
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "$ref": "common.json#/$defs/uuid"
+    }
+  }
+}
