@@ -103,3 +103,103 @@ When starting a new conversation, read these three files first:
 - `docs/PROJECT-STATUS.md`
 - `docs/DEVELOPMENT-ROADMAP.md`
 - `docs/CHAT-HANDOFF.md`
+
+## 2026-09-29 Current Handoff — Alpha Core Runtime/Gemini Verification
+
+### Verified State
+
+Ann-E runtime host and real Gemini provider work end-to-end in the local working tree.
+
+Verification:
+
+1. `runtime_host` + `health` — PASS
+2. `runtime_host` + deterministic `message` — PASS
+3. `runtime_host` + Gemini `message` — PASS
+
+Successful Gemini response:
+
+- `status=completed`
+- `stop_reason=FINAL_RESPONSE`
+- `iterations=1`
+- `provider_id=gemini`
+- `provider_version=1.0.0`
+- `model=gemini-3.5-flash-lite`
+
+### Architecture Confirmed
+
+Desktop/runtime host
+? Runtime protocol
+? RuntimeApplication
+? IntelligenceRequest
+? IntelligenceOrchestrator
+? ModelService / ModelRouter
+? Gemini provider
+? IntelligencePlanningLoop
+? Runtime response
+
+The Gemini provider remains an inference boundary only. It does not receive authority to execute tools, construct permissions, modify policy, or access protected Ann-E resources.
+
+### Next Engineering Tasks
+
+1. Add explicit timeout handling for synchronous Gemini inference.
+2. Add stronger Gemini provider tests.
+3. Test `TOOL_PROPOSAL` through authority/policy/runtime.
+4. Connect desktop UI to the verified runtime host.
+5. Preserve provider-agnostic routing.
+6. Only after Alpha Core is stable: additional providers, memory, engineering integrations, voice, Colony, and 3D robot UI.
+
+### Handoff Rule
+
+Another AI agent should read `docs/PROJECT-STATUS.md`, `docs/DEVELOPMENT-ROADMAP.md`, and this file before modifying runtime/provider architecture.
+
+The Gemini success is verified locally, but all implementation changes are not necessarily present on remote `main` yet.
+
+## 2026-09-29 Current Handoff — Alpha Core Runtime/Gemini Verification
+
+### Verified State
+
+Ann-E runtime host and real Gemini provider work end-to-end in the local working tree.
+
+Verification:
+
+1. `runtime_host` + `health` — PASS
+2. `runtime_host` + deterministic `message` — PASS
+3. `runtime_host` + Gemini `message` — PASS
+
+Successful Gemini response:
+
+- `status=completed`
+- `stop_reason=FINAL_RESPONSE`
+- `iterations=1`
+- `provider_id=gemini`
+- `provider_version=1.0.0`
+- `model=gemini-3.5-flash-lite`
+
+### Architecture Confirmed
+
+Desktop/runtime host
+? Runtime protocol
+? RuntimeApplication
+? IntelligenceRequest
+? IntelligenceOrchestrator
+? ModelService / ModelRouter
+? Gemini provider
+? IntelligencePlanningLoop
+? Runtime response
+
+The Gemini provider remains an inference boundary only. It does not receive authority to execute tools, construct permissions, modify policy, or access protected Ann-E resources.
+
+### Next Engineering Tasks
+
+1. Add explicit timeout handling for synchronous Gemini inference.
+2. Add stronger Gemini provider tests.
+3. Test `TOOL_PROPOSAL` through authority/policy/runtime.
+4. Connect desktop UI to the verified runtime host.
+5. Preserve provider-agnostic routing.
+6. Only after Alpha Core is stable: additional providers, memory, engineering integrations, voice, Colony, and 3D robot UI.
+
+### Handoff Rule
+
+Another AI agent should read `docs/PROJECT-STATUS.md`, `docs/DEVELOPMENT-ROADMAP.md`, and this file before modifying runtime/provider architecture.
+
+The Gemini success is verified locally, but all implementation changes are not necessarily present on remote `main` yet.

@@ -211,3 +211,48 @@ Tests are part of the definition of done.
 - Engineering artifacts must state their truth/validation level.
 - Self-extension requires the configured approval policy.
 - Every capability should have an owner, contract, permission model, tests, telemetry, and recovery behavior.
+
+## 2026-09-29 Alpha Core Verification
+
+### Runtime Host + Gemini Integration
+
+Verified against the local Ann-E working tree after desktop foundation commit `a163fb5`.
+
+Completed verification:
+
+- Runtime host `health` request: PASS
+- Deterministic provider end-to-end `message` request: PASS
+- Gemini provider end-to-end `message` request: PASS
+- Runtime protocol request/response encoding: PASS
+- RuntimeApplication ? IntelligenceRequest ? IntelligenceOrchestrator ? ModelService ? IntelligencePlanningLoop: PASS
+- Gemini returned a valid Ann-E `FINAL_RESPONSE`
+- Gemini provider ID: `gemini`
+- Gemini provider version: `1.0.0`
+- Active Gemini model: `gemini-3.5-flash-lite`
+- Gemini API key detected through `ANNE_GEMINI_API_KEY`
+- API key value was not exposed
+
+The Google SDK emitted an AFC advisory because Ann-E currently calls `Models.generate_content` directly. This did not prevent the request from completing.
+
+### Current Conclusion
+
+The previously observed runtime-host "hang" is not a runtime-host startup/protocol failure.
+
+The host intentionally waits for stdin when launched interactively. When given valid newline-delimited JSON, it successfully processed:
+
+1. Health request
+2. Deterministic message request
+3. Gemini message request
+
+### Remaining Work
+
+- Add explicit provider/network timeout handling around synchronous Gemini inference.
+- Add dedicated Gemini integration tests.
+- Test Gemini `TOOL_PROPOSAL` through the complete authority/policy/runtime path.
+- Connect the desktop UI message path to the verified runtime host.
+- Preserve provider-agnostic routing for future OpenAI, local, and specialized providers.
+- Do not begin Colony/3D robot/integrations until Alpha Core is stable.
+
+### Git State
+
+The Gemini verification was performed against local work that is not yet fully pushed to `origin/main`.
