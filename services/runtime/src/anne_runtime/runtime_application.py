@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -10,6 +11,7 @@ from .audit import AppendOnlyAuditLog
 from .contracts import TaskRequest
 from .deterministic_provider import DeterministicModelProvider
 from .execution import ExecutionCoordinator
+from .gemini_provider import GeminiModelProvider
 from .intelligence_contracts import IntelligenceRequest
 from .intelligence_orchestrator import IntelligenceOrchestrator
 from .intelligence_planning_loop import IntelligencePlanningLoop
@@ -33,6 +35,15 @@ MAX_USER_INTENT_LENGTH = 16_000
 MAX_CONVERSATION_MESSAGES = 32
 MAX_CONVERSATION_CONTENT_LENGTH = 16_000
 
+MODEL_PROVIDER_ENV = "ANNE_MODEL_PROVIDER"
+MODEL_NAME_ENV = "ANNE_MODEL_NAME"
+
+DETERMINISTIC_PROVIDER_ID = "deterministic"
+DETERMINISTIC_MODEL = "deterministic-v1"
+
+GEMINI_PROVIDER_ID = "gemini"
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+
 
 class RuntimeApplicationError(RuntimeError):
     """Raised when a runtime application request cannot be processed safely."""
@@ -45,9 +56,25 @@ class RuntimeApplication:
     The desktop/UI layer never constructs model providers, planners, tools,
     policies, or authority objects. All of those remain inside the runtime.
 
-    The initial desktop message path deliberately uses the deterministic
-    provider. This proves the complete application boundary without adding
-    network access or an external model dependency.
+    The deterministic provider remains the default so the desktop/runtime
+    integration remains offline and deterministic unless a different provider
+    is explicitly selected through the runtime environment.
+
+    Supported provider selection:
+
+        ANNE_MODEL_PROVIDER=deterministic
+        ANNE_MODEL_PROVIDER=gemini
+
+    Optional model selection:
+
+        ANNE_MODEL_NAME=<model>
+
+    Gemini-specific model selection:
+
+        ANNE_GEMINI_MODEL=<model>
+
+    Model provider output remains untrusted model data and must pass through
+    the existing Ann-E intelligence and runtime security boundaries.
     """
 
     def __init__(self, repository_root: Path) -> None:
@@ -220,12 +247,65 @@ class RuntimeApplication:
             )
         )
 
-        return ModelService(
-            ModelRouter(
-                providers,
-                default_provider_id="deterministic",
-                default_model="deterministic-v1",
+        selected_provider = (
+            os.getenv(MODEL_PROVIDER_ENV)
+            or DETERMINISTIC_PROVIDER_ID
+        ).strip().lower()
+
+        selected_model = (
+            os.getenv(MODEL_NAME_ENV)
+            or ""
+        ).strip()
+
+        if selected_provider == GEMINI_PROVIDER_ID:
+            gemini_model = (
+                selected_model
+                or os.getenv("ANNE_GEMINI_MODEL")
+                or GEMINI_MODEL
+            ).strip()
+
+            if not gemini_model:
+                raise RuntimeApplicationError(
+                    "Gemini model selection cannot be blank."
+                )
+
+            providers.register(
+                GeminiModelProvider(
+                    model=gemini_model,
+                )
             )
+
+            return ModelService(
+                ModelRouter(
+                    providers,
+                    default_provider_id=GEMINI_PROVIDER_ID,
+                    default_model=gemini_model,
+                )
+            )
+
+        if selected_provider == DETERMINISTIC_PROVIDER_ID:
+            deterministic_model = (
+                selected_model
+                or DETERMINISTIC_MODEL
+            ).strip()
+
+            if deterministic_model != DETERMINISTIC_MODEL:
+                raise RuntimeApplicationError(
+                    "Unsupported deterministic model: "
+                    f"{deterministic_model}"
+                )
+
+            return ModelService(
+                ModelRouter(
+                    providers,
+                    default_provider_id=DETERMINISTIC_PROVIDER_ID,
+                    default_model=DETERMINISTIC_MODEL,
+                )
+            )
+
+        raise RuntimeApplicationError(
+            "Unsupported model provider: "
+            f"{selected_provider}"
         )
 
     @staticmethod

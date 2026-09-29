@@ -10,6 +10,19 @@ from anne_runtime.runtime_application import (
 )
 
 
+@pytest.fixture(autouse=True)
+def force_deterministic_provider(monkeypatch):
+    """
+    Keep RuntimeApplication tests deterministic and offline.
+
+    The production application intentionally honors ANNE_MODEL_PROVIDER.
+    Tests must not inherit a developer's local provider selection because
+    that could cause an external model/API request during the test suite.
+    """
+    monkeypatch.setenv("ANNE_MODEL_PROVIDER", "deterministic")
+    monkeypatch.setenv("ANNE_MODEL_NAME", "deterministic-v1")
+
+
 def test_message_traverses_intelligence_pipeline(tmp_path):
     repository_root = tmp_path
 
