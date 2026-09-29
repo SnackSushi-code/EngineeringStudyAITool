@@ -28,6 +28,7 @@ from .intelligence_tool_authority import (
 )
 from .model_router import ModelRouter
 from .model_service import ModelService
+from .calculator_tool import calculator_handler
 from .orchestrator import TaskOrchestrator
 from .policy import PolicyBroker, PolicyRule
 from .provider_registry import ProviderRegistry
@@ -119,6 +120,7 @@ class RuntimeApplication:
 
         self._tool_registry = ToolRegistry()
         self._register_alpha_echo_tool()
+        self._register_calculator_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -175,6 +177,34 @@ class RuntimeApplication:
             self._intelligence,
             self._runtime_bridge,
             max_iterations=8,
+        )
+
+    def _register_calculator_tool(self) -> None:
+        """Register the safe deterministic engineering calculator."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.calculator",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic arithmetic calculator for engineering "
+                    "and numeric calculations."
+                ),
+                capabilities=("engineering.calculation",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="expression",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Arithmetic expression to evaluate safely.",
+                        ),
+                    )
+                ),
+                required_permissions=(),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            calculator_handler,
         )
 
     def _register_alpha_echo_tool(self) -> None:
