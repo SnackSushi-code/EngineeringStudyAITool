@@ -69,7 +69,7 @@ class GeminiModelProvider:
 
     DEFAULT_PROVIDER_ID = "gemini"
     DEFAULT_PROVIDER_VERSION = "1.0.0"
-    DEFAULT_MODEL = "gemini-2.5-flash-lite"
+    DEFAULT_MODEL = "gemini-3.5-flash-lite"
     DEFAULT_TIMEOUT_MS = 120_000
 
     RESPONSE_SCHEMA = GeminiDecisionSchema
@@ -444,6 +444,14 @@ Rules:
             f"request_id={request.request_id}\n"
             f"task_id={request.task_id}\n"
         )
+
+        tool_catalog = request.metadata.get("anne.tool_catalog")
+        if tool_catalog:
+            runtime_context += (
+                "\n\n"
+                "Ann-E available tools:\n"
+                f"{tool_catalog}"
+            )
 
         for message in request.messages:
             role = message.role.value

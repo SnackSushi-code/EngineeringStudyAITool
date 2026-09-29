@@ -8,7 +8,13 @@ from typing import Any, Mapping
 from uuid import UUID, uuid4
 
 from .audit import AppendOnlyAuditLog
-from .contracts import TaskRequest
+from .contracts import (
+    PermissionClass,
+    PermissionDecision,
+    PermissionScope,
+    RetryMode,
+    TaskRequest,
+)
 from .deterministic_provider import DeterministicModelProvider
 from .execution import ExecutionCoordinator
 from .gemini_provider import GeminiModelProvider
@@ -23,8 +29,14 @@ from .intelligence_tool_authority import (
 from .model_router import ModelRouter
 from .model_service import ModelService
 from .orchestrator import TaskOrchestrator
-from .policy import PolicyBroker
+from .policy import PolicyBroker, PolicyRule
 from .provider_registry import ProviderRegistry
+from .tool_contracts import (
+    ToolArgument,
+    ToolArgumentSchema,
+    ToolDescriptor,
+    ToolValueType,
+)
 from .tool_executor import ToolExecutor
 from .tool_registry import ToolRegistry
 from .tooling import AuthorizedToolRunner
@@ -106,7 +118,17 @@ class RuntimeApplication:
             )
 
         self._tool_registry = ToolRegistry()
-        self._policy = PolicyBroker()
+        self._register_alpha_echo_tool()
+
+        self._policy = PolicyBroker(
+            rules=[
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/alpha-echo",
+                    decision=PermissionDecision.ALLOW,
+                ),
+            ],
+        )
 
         self._tool_executor = ToolExecutor(
             self._tool_registry,
@@ -154,6 +176,54 @@ class RuntimeApplication:
             self._runtime_bridge,
             max_iterations=8,
         )
+
+    def _register_alpha_echo_tool(self) -> None:
+        """Register the safe internal tool used to verify Phase 2 execution."""
+
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.echo",
+                version="1.0.0",
+                description=(
+                    "Safe internal Alpha Core verification tool that "
+                    "returns the supplied value unchanged."
+                ),
+                capabilities=("internal.echo",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="value",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Text value to echo unchanged.",
+                        ),
+                    ),
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/alpha-echo",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1_000,
+            ),
+            self._alpha_echo_handler,
+        )
+
+    @staticmethod
+    def _alpha_echo_handler(
+        context: Any,
+        arguments: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        """Return the supplied value without performing external side effects."""
+
+        if context.is_cancelled():
+            context.raise_if_cancelled()
+
+        return {
+            "echo": arguments["value"],
+        }
 
     @property
     def workspace_id(self) -> UUID:
@@ -204,7 +274,7 @@ class RuntimeApplication:
             request_id=request_uuid,
             task_id=task_uuid,
             created_at=self._utc_timestamp(),
-            source="desktop",
+            source="ui",
             user_intent=user_intent,
             priority="normal",
             workspace_id=self._workspace_id,
