@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -59,6 +62,72 @@ def test_message_traverses_intelligence_pipeline(tmp_path):
     assert "IntelligenceOrchestrator" in response_text
     assert "ModelService" in response_text
     assert "IntelligencePlanningLoop" in response_text
+
+
+def test_message_executes_calculator_through_production_path(tmp_path, monkeypatch):
+    repository_root = Path(__file__).resolve().parents[3]
+
+    def calculator_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "tool_call": {
+                        "request_id": str(request_id),
+                        "task_id": str(task_id),
+                        "tool": "anne.calculator",
+                        "operation": "run",
+                        "arguments": {
+                            "expression": "9.81 * 5",
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.calculator"
+        assert '"value": 49.050000000000004' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "The calculation result is 49.05.",
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(calculator_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    request_id = str(uuid4())
+    task_id = str(uuid4())
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": "Calculate 9.81 * 5.",
+            "conversation": [],
+        },
+    )
+
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["iterations"] == 2
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert result["response_text"] == "The calculation result is 49.05."
 
 
 def test_message_rejects_blank_user_intent(tmp_path):

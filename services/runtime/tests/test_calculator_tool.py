@@ -9,6 +9,7 @@ from anne_runtime.calculator_tool import (
     calculate_expression,
 )
 from anne_runtime.runtime_application import RuntimeApplication
+from anne_runtime.contracts import PermissionClass, PermissionScope
 from anne_runtime.tool_contracts import ToolCall, RetryMode
 
 
@@ -75,7 +76,8 @@ def test_runtime_registers_calculator():
 
     assert descriptor.tool_id == "anne.calculator"
     assert descriptor.version == "1.0.0"
-    assert descriptor.required_permissions == ()
+    assert len(descriptor.required_permissions) == 1
+    assert descriptor.required_permissions[0].scope == "anne/runtime/calculator"
     assert descriptor.retry_mode is RetryMode.NONE
     assert descriptor.max_timeout_ms == 1000
 
@@ -90,7 +92,7 @@ def test_runtime_executes_calculator():
         tool="anne.calculator",
         operation="run",
         arguments={"expression": "9.81 * 5"},
-        permissions=(),
+        permissions=(PermissionScope(PermissionClass.READ, "anne/runtime/calculator"),),
         timeout_ms=1000,
         retry_mode=RetryMode.NONE,
         idempotency_key="test-calculator-runtime",

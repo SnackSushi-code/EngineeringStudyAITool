@@ -129,6 +129,11 @@ class RuntimeApplication:
                     target_pattern="anne/runtime/alpha-echo",
                     decision=PermissionDecision.ALLOW,
                 ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/calculator",
+                    decision=PermissionDecision.ALLOW,
+                ),
             ],
         )
 
@@ -200,7 +205,12 @@ class RuntimeApplication:
                         ),
                     )
                 ),
-                required_permissions=(),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/calculator",
+                    ),
+                ),
                 retry_mode=RetryMode.NONE,
                 max_timeout_ms=1000,
             ),
