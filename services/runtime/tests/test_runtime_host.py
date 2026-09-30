@@ -464,3 +464,100 @@ def _run_host_process(
         env=environment,
         check=False,
     )
+
+def test_host_streams_response_before_stdin_eof(monkeypatch) -> None:
+    request = RuntimeRequest(
+        request_id=str(uuid4()),
+        task_id=str(uuid4()),
+        operation="health",
+        payload={},
+    )
+
+    encoded_request = encode_message(request) + "\n"
+
+    response_written = threading.Event()
+    allow_eof = threading.Event()
+    output_lines: list[str] = []
+
+    def fake_application(*, repository_root):
+        return object()
+
+    def fake_handle_line(*, raw_line, application):
+        decoded_request = decode_request(raw_line)
+
+        return RuntimeResponse(
+            request_id=decoded_request.request_id,
+            task_id=decoded_request.task_id,
+            status="completed",
+            payload={"healthy": True},
+        )
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host.RuntimeApplication",
+        fake_application,
+    )
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host._handle_line",
+        fake_handle_line,
+    )
+
+    class StreamingStdin:
+        def __iter__(self):
+            yield encoded_request
+
+            assert response_written.wait(timeout=1.0), (
+                "runtime host did not emit the response before stdin reached EOF"
+            )
+
+            allow_eof.wait(timeout=1.0)
+
+    class StreamingStdout:
+        def write(self, value):
+            output_lines.append(value)
+            if value.strip():
+                response_written.set()
+            return len(value)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host.sys",
+        type(
+            "FakeSys",
+            (),
+            {
+                "stdin": StreamingStdin(),
+                "stdout": StreamingStdout(),
+            },
+        ),
+    )
+
+    result_holder: list[int] = []
+
+    def run():
+        result_holder.append(run_host())
+
+    host_thread = threading.Thread(target=run)
+    host_thread.start()
+
+    assert response_written.wait(timeout=1.0), (
+        "runtime host did not produce a response while stdin remained open"
+    )
+
+    responses = [
+        decode_response(line)
+        for line in output_lines
+        if line.strip()
+    ]
+
+    assert len(responses) == 1
+    assert responses[0].request_id == request.request_id
+    assert responses[0].task_id == request.task_id
+
+    allow_eof.set()
+    host_thread.join(timeout=1.0)
+
+    assert not host_thread.is_alive()
+    assert result_holder == [0]
