@@ -30,6 +30,7 @@ from .model_router import ModelRouter
 from .model_service import ModelService
 from .calculator_tool import calculator_handler
 from .unit_conversion_tool import unit_conversion_handler
+from .vector_math_tool import vector_math_handler
 from .orchestrator import TaskOrchestrator
 from .policy import PolicyBroker, PolicyRule
 from .provider_registry import ProviderRegistry
@@ -123,6 +124,7 @@ class RuntimeApplication:
         self._register_alpha_echo_tool()
         self._register_calculator_tool()
         self._register_unit_conversion_tool()
+        self._register_vector_math_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -139,6 +141,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/unit-conversion",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/vector-math",
                     decision=PermissionDecision.ALLOW,
                 ),
             ],
@@ -234,6 +241,65 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             unit_conversion_handler,
+        )
+
+    def _register_vector_math_tool(self) -> None:
+        """Register the safe deterministic engineering vector-math tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.vector_math",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic vector mathematics for engineering "
+                    "calculations, including magnitude, addition, subtraction, "
+                    "scaling, dot products, cross products, normalization, "
+                    "and angles."
+                ),
+                capabilities=("engineering.vector_math",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Vector-math operation to perform.",
+                        ),
+                        ToolArgument(
+                            name="vector",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="Single numeric vector for unary operations.",
+                        ),
+                        ToolArgument(
+                            name="left",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="Left numeric vector for binary operations.",
+                        ),
+                        ToolArgument(
+                            name="right",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="Right numeric vector for binary operations.",
+                        ),
+                        ToolArgument(
+                            name="scalar",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Numeric scalar for vector scaling.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/vector-math",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            vector_math_handler,
         )
 
     def _register_calculator_tool(self) -> None:
