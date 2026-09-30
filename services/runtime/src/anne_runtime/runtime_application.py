@@ -29,6 +29,7 @@ from .intelligence_tool_authority import (
 from .model_router import ModelRouter
 from .model_service import ModelService
 from .calculator_tool import calculator_handler
+from .complex_math_tool import complex_math_handler
 from .unit_conversion_tool import unit_conversion_handler
 from .vector_math_tool import vector_math_handler
 from .matrix_math_tool import matrix_math_handler
@@ -127,6 +128,7 @@ class RuntimeApplication:
         self._register_unit_conversion_tool()
         self._register_vector_math_tool()
         self._register_matrix_math_tool()
+        self._register_complex_math_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -155,9 +157,13 @@ class RuntimeApplication:
                     target_pattern="anne/runtime/matrix-math",
                     decision=PermissionDecision.ALLOW,
                 ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/complex-math",
+                    decision=PermissionDecision.ALLOW,
+                ),
             ],
         )
-
         self._tool_executor = ToolExecutor(
             self._tool_registry,
             self._policy,
@@ -377,6 +383,77 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             matrix_math_handler,
+        )
+    def _register_complex_math_tool(self) -> None:
+        """Register the safe deterministic engineering complex-math tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.complex_math",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic complex-number mathematics for "
+                    "engineering calculations, including arithmetic, "
+                    "magnitude, phase, conjugates, components, and "
+                    "rectangular-polar conversions."
+                ),
+                capabilities=("engineering.complex_math",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Complex-math operation to perform.",
+                        ),
+                        ToolArgument(
+                            name="value",
+                            value_type=ToolValueType.OBJECT,
+                            required=False,
+                            description=(
+                                "Complex value for unary operations, represented "
+                                "by real and imaginary components."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="left",
+                            value_type=ToolValueType.OBJECT,
+                            required=False,
+                            description=(
+                                "Left complex value for binary operations."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="right",
+                            value_type=ToolValueType.OBJECT,
+                            required=False,
+                            description=(
+                                "Right complex value for binary operations."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="magnitude",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Magnitude for polar conversion.",
+                        ),
+                        ToolArgument(
+                            name="phase",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Phase in radians for polar conversion.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/complex-math",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            complex_math_handler,
         )
     def _register_calculator_tool(self) -> None:
         """Register the safe deterministic engineering calculator."""
