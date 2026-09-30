@@ -176,3 +176,70 @@ def test_message_rejects_invalid_conversation(tmp_path):
                 ],
             },
         )
+def test_message_executes_unit_conversion_through_production_path(tmp_path, monkeypatch):
+    repository_root = Path(__file__).resolve().parents[3]
+
+    def unit_conversion_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": str(request_id),
+                        "task_id": str(task_id),
+                        "tool": "anne.unit_convert",
+                        "operation": "run",
+                        "arguments": {
+                            "value": 12,
+                            "from_unit": "in",
+                            "to_unit": "ft",
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.unit_convert"
+        assert '"result": 1.0' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "12 inches is exactly 1 foot.",
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(unit_conversion_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    request_id = str(uuid4())
+    task_id = str(uuid4())
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": "Convert 12 inches to feet.",
+            "conversation": [],
+        },
+    )
+
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["iterations"] == 2
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert result["response_text"] == "12 inches is exactly 1 foot."

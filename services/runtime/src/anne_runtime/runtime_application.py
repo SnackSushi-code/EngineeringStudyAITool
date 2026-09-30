@@ -29,6 +29,7 @@ from .intelligence_tool_authority import (
 from .model_router import ModelRouter
 from .model_service import ModelService
 from .calculator_tool import calculator_handler
+from .unit_conversion_tool import unit_conversion_handler
 from .orchestrator import TaskOrchestrator
 from .policy import PolicyBroker, PolicyRule
 from .provider_registry import ProviderRegistry
@@ -121,6 +122,7 @@ class RuntimeApplication:
         self._tool_registry = ToolRegistry()
         self._register_alpha_echo_tool()
         self._register_calculator_tool()
+        self._register_unit_conversion_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -132,6 +134,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/calculator",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/unit-conversion",
                     decision=PermissionDecision.ALLOW,
                 ),
             ],
@@ -182,6 +189,51 @@ class RuntimeApplication:
             self._intelligence,
             self._runtime_bridge,
             max_iterations=8,
+        )
+
+    def _register_unit_conversion_tool(self) -> None:
+        """Register the safe deterministic engineering unit converter."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.unit_convert",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic engineering unit conversion across "
+                    "compatible physical units."
+                ),
+                capabilities=("engineering.unit_conversion",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="value",
+                            value_type=ToolValueType.NUMBER,
+                            required=True,
+                            description="Numeric value to convert.",
+                        ),
+                        ToolArgument(
+                            name="from_unit",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Source engineering unit.",
+                        ),
+                        ToolArgument(
+                            name="to_unit",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Target engineering unit.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/unit-conversion",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            unit_conversion_handler,
         )
 
     def _register_calculator_tool(self) -> None:
