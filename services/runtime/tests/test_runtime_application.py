@@ -566,6 +566,78 @@ def test_message_executes_differential_equations_through_production_path(
         )
     )
 
+def test_message_executes_probability_through_production_path(
+    tmp_path,
+    monkeypatch,
+):
+    repository_root = Path(__file__).resolve().parents[3]
+
+    request_id = str(uuid4())
+    task_id = str(uuid4())
+
+    def probability_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.probability",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "binomial",
+                            "n": 5,
+                            "k": 2,
+                            "p": 0.5,
+                        },
+                    },
+                }
+            )
+
+        tool_message = model_request.messages[-1]
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.probability"
+        assert '"operation": "binomial"' in tool_message.content
+        assert '"result": 0.3125' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "The binomial probability is 0.3125.",
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(probability_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": (
+                "Calculate the binomial probability for "
+                "n=5, k=2, p=0.5."
+            ),
+            "conversation": [],
+        },
+    )
+
+    assert result["response_text"] == "The binomial probability is 0.3125."
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+
+
 def test_message_executes_statistics_through_production_path(
     tmp_path,
     monkeypatch,

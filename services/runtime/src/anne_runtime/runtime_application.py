@@ -37,6 +37,7 @@ from .vector_math_tool import vector_math_handler
 from .matrix_math_tool import matrix_math_handler
 from .orchestrator import TaskOrchestrator
 from .policy import PolicyBroker, PolicyRule
+from .probability_tool import probability_handler
 from .provider_registry import ProviderRegistry
 from .tool_contracts import (
     ToolArgument,
@@ -133,12 +134,18 @@ class RuntimeApplication:
         self._register_complex_math_tool()
         self._register_differential_equations_tool()
         self._register_statistics_tool()
+        self._register_probability_tool()
 
         self._policy = PolicyBroker(
             rules=[
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/alpha-echo",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/probability",
                     decision=PermissionDecision.ALLOW,
                 ),
                 PolicyRule(
@@ -926,6 +933,79 @@ class RuntimeApplication:
             datetime.now(timezone.utc)
             .isoformat()
             .replace("+00:00", "Z")
+        )
+
+    def _register_probability_tool(self) -> None:
+        """Register the safe deterministic engineering probability tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.probability",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic probability calculations for "
+                    "engineering and statistics, including binomial "
+                    "probability and normal PDF/CDF calculations."
+                ),
+                capabilities=("engineering.probability",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Probability operation: binomial, "
+                                "normal_pdf, or normal_cdf."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="n",
+                            value_type=ToolValueType.INTEGER,
+                            required=False,
+                            description="Number of binomial trials.",
+                        ),
+                        ToolArgument(
+                            name="k",
+                            value_type=ToolValueType.INTEGER,
+                            required=False,
+                            description="Number of binomial successes.",
+                        ),
+                        ToolArgument(
+                            name="p",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Binomial success probability.",
+                        ),
+                        ToolArgument(
+                            name="x",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Normal-distribution evaluation point.",
+                        ),
+                        ToolArgument(
+                            name="mean",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Normal-distribution mean.",
+                        ),
+                        ToolArgument(
+                            name="stddev",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Normal-distribution standard deviation.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/probability",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            probability_handler,
         )
 
     def _register_statistics_tool(self) -> None:
