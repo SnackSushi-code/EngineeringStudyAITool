@@ -30,6 +30,7 @@ from .model_router import ModelRouter
 from .model_service import ModelService
 from .calculator_tool import calculator_handler
 from .complex_math_tool import complex_math_handler
+from .differential_equations_tool import differential_equations_handler
 from .unit_conversion_tool import unit_conversion_handler
 from .vector_math_tool import vector_math_handler
 from .matrix_math_tool import matrix_math_handler
@@ -129,6 +130,7 @@ class RuntimeApplication:
         self._register_vector_math_tool()
         self._register_matrix_math_tool()
         self._register_complex_math_tool()
+        self._register_differential_equations_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -160,6 +162,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/complex-math",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/differential-equations",
                     decision=PermissionDecision.ALLOW,
                 ),
             ],
@@ -384,6 +391,74 @@ class RuntimeApplication:
             ),
             matrix_math_handler,
         )
+    def _register_differential_equations_tool(self) -> None:
+        """Register the safe deterministic engineering ODE solver."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.differential_equations",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic numerical solution of first-order "
+                    "ordinary differential equations using Euler and RK4 "
+                    "methods for initial-value problems."
+                ),
+                capabilities=("engineering.differential_equations",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Numerical integration method: euler or rk4."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="expression",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Safe derivative expression f(t,y)."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="t0",
+                            value_type=ToolValueType.NUMBER,
+                            required=True,
+                            description="Initial independent-variable value.",
+                        ),
+                        ToolArgument(
+                            name="y0",
+                            value_type=ToolValueType.NUMBER,
+                            required=True,
+                            description="Initial dependent-variable value.",
+                        ),
+                        ToolArgument(
+                            name="tf",
+                            value_type=ToolValueType.NUMBER,
+                            required=True,
+                            description="Final independent-variable value.",
+                        ),
+                        ToolArgument(
+                            name="step_size",
+                            value_type=ToolValueType.NUMBER,
+                            required=True,
+                            description="Positive numerical integration step size.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/differential-equations",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            differential_equations_handler,
+        )
+
     def _register_complex_math_tool(self) -> None:
         """Register the safe deterministic engineering complex-math tool."""
         self._tool_registry.register(

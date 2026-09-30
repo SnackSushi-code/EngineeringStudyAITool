@@ -474,3 +474,94 @@ def test_message_executes_complex_math_through_production_path(
     assert result["response_text"] == (
         "The complex multiplication result is -5 + 10i."
     )
+
+def test_message_executes_differential_equations_through_production_path(
+    tmp_path,
+    monkeypatch,
+):
+    repository_root = Path(__file__).resolve().parents[3]
+
+    request_id = str(uuid4())
+    task_id = str(uuid4())
+
+    def differential_equations_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.differential_equations",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "rk4",
+                            "expression": "y",
+                            "t0": 0.0,
+                            "y0": 1.0,
+                            "tf": 1.0,
+                            "step_size": 0.1,
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.differential_equations"
+        assert '"operation": "rk4"' in tool_message.content
+        assert '"steps": 10' in tool_message.content
+        assert '"t": 1.0' in tool_message.content
+        assert '"y":' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": (
+                    "The RK4 solution of dy/dt = y with "
+                    "y(0) = 1 over 0 to 1 is approximately 2.71828."
+                ),
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(differential_equations_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": (
+                "Solve dy/dt = y with y(0) = 1 "
+                "from t=0 to t=1 using RK4."
+            ),
+            "conversation": [],
+        },
+    )
+
+    assert result["iterations"] == 2
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert (
+        result["response_text"]
+        == (
+            "The RK4 solution of dy/dt = y with "
+            "y(0) = 1 over 0 to 1 is approximately 2.71828."
+        )
+    )
