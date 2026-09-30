@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -47,11 +48,15 @@ def run_host() -> int:
         )
         return 1
 
-    for raw_line in sys.stdin:
+    import threading
+
+    stdout_lock = threading.Lock()
+
+    def process_line(raw_line: str) -> RuntimeResponse | None:
         line = raw_line.strip()
 
         if not line:
-            continue
+            return None
 
         response = _handle_line(
             raw_line=line,
@@ -59,12 +64,27 @@ def run_host() -> int:
         )
 
         try:
-            sys.stdout.write(
-                encode_message(response) + "\n"
-            )
-            sys.stdout.flush()
+            encoded_response = encode_message(response) + "\n"
+
+            with stdout_lock:
+                sys.stdout.write(encoded_response)
+                sys.stdout.flush()
         except BrokenPipeError:
-            return 0
+            return None
+
+        return response
+
+    with ThreadPoolExecutor(
+        max_workers=8,
+        thread_name_prefix="anne-runtime",
+    ) as executor:
+        futures = [
+            executor.submit(process_line, raw_line)
+            for raw_line in sys.stdin
+        ]
+
+        for future in futures:
+            future.result()
 
     return 0
 

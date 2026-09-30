@@ -4,12 +4,16 @@ import json
 import os
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from uuid import uuid4
 
-from anne_runtime.runtime_host import _dispatch
+from anne_runtime.runtime_host import _dispatch, run_host
 from anne_runtime.runtime_protocol import (
     RuntimeRequest,
+    RuntimeResponse,
+    decode_request,
     decode_response,
     encode_message,
 )
@@ -168,6 +172,126 @@ def test_host_process_multiple_requests() -> None:
 
     assert responses[2].request_id == requests[2].request_id
     assert responses[2].status == "failed"
+
+
+def test_host_processes_requests_concurrently(monkeypatch) -> None:
+    requests = [
+        RuntimeRequest(
+            request_id=str(uuid4()),
+            task_id=str(uuid4()),
+            operation="health",
+            payload={},
+        ),
+        RuntimeRequest(
+            request_id=str(uuid4()),
+            task_id=str(uuid4()),
+            operation="health",
+            payload={},
+        ),
+    ]
+
+    active_requests = 0
+    max_active_requests = 0
+    state_lock = threading.Lock()
+
+    def fake_application(*, repository_root):
+        return object()
+
+    def fake_handle_line(*, raw_line, application):
+        nonlocal active_requests, max_active_requests
+
+        with state_lock:
+            active_requests += 1
+            max_active_requests = max(
+                max_active_requests,
+                active_requests,
+            )
+
+        try:
+            time.sleep(0.15)
+
+            request = decode_request(raw_line)
+
+            return RuntimeResponse(
+                request_id=request.request_id,
+                task_id=request.task_id,
+                status="completed",
+                payload={"healthy": True},
+            )
+        finally:
+            with state_lock:
+                active_requests -= 1
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host.RuntimeApplication",
+        fake_application,
+    )
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host._handle_line",
+        fake_handle_line,
+    )
+
+    input_data = "\n".join(
+        encode_message(request)
+        for request in requests
+    ) + "\n"
+
+    class FakeStdin:
+        def __iter__(self):
+            return iter(input_data.splitlines(True))
+
+    output_lines: list[str] = []
+
+    class FakeStdout:
+        def write(self, value):
+            output_lines.append(value)
+            return len(value)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host.sys",
+        type(
+            "FakeSys",
+            (),
+            {
+                "stdin": FakeStdin(),
+                "stdout": FakeStdout(),
+            },
+        ),
+    )
+
+    start = time.perf_counter()
+
+    result = run_host()
+
+    elapsed = time.perf_counter() - start
+
+    assert result == 0
+    assert max_active_requests >= 2
+    assert elapsed < 0.28
+
+    responses = [
+        decode_response(line)
+        for line in output_lines
+        if line.strip()
+    ]
+
+    assert len(responses) == len(requests)
+
+    response_ids = {
+        (response.request_id, response.task_id)
+        for response in responses
+    }
+
+    request_ids = {
+        (request.request_id, request.task_id)
+        for request in requests
+    }
+
+    assert response_ids == request_ids
 
 
 def test_host_does_not_write_diagnostics_to_stdout() -> None:
