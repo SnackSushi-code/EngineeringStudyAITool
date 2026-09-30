@@ -796,3 +796,75 @@ def test_message_executes_interpolation_through_production_path(
         "Linear interpolation gives a value of 5.0."
     )
     assert result["stop_reason"] == "FINAL_RESPONSE"
+def test_message_executes_regression_through_production_path(
+    monkeypatch,
+):
+    repository_root = Path(__file__).resolve().parents[3]
+
+    request_id = str(uuid4())
+    task_id = str(uuid4())
+
+    def regression_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.regression",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "linear",
+                            "x_values": [1.0, 2.0, 3.0, 4.0],
+                            "y_values": [3.0, 5.0, 7.0, 9.0],
+                        },
+                    },
+                }
+            )
+
+        tool_message = model_request.messages[-1]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.regression"
+        assert '"operation": "linear"' in tool_message.content
+        assert '"slope": 2.0' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": (
+                    "The regression line has a slope of 2.0."
+                ),
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(regression_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": (
+                "Perform a linear regression on the engineering data."
+            ),
+            "conversation": [],
+        },
+    )
+
+    assert result["response_text"] == (
+        "The regression line has a slope of 2.0."
+    )
+    assert result["stop_reason"] == "FINAL_RESPONSE"

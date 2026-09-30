@@ -39,6 +39,7 @@ from .orchestrator import TaskOrchestrator
 from .policy import PolicyBroker, PolicyRule
 from .probability_tool import probability_handler
 from .interpolation_tool import interpolation_handler
+from .regression_tool import regression_handler
 from .provider_registry import ProviderRegistry
 from .tool_contracts import (
     ToolArgument,
@@ -137,6 +138,7 @@ class RuntimeApplication:
         self._register_statistics_tool()
         self._register_probability_tool()
         self._register_interpolation_tool()
+        self._register_regression_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -153,6 +155,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/interpolation",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/regression",
                     decision=PermissionDecision.ALLOW,
                 ),
                 PolicyRule(
@@ -1068,6 +1075,61 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             interpolation_handler,
+        )
+
+    def _register_regression_tool(self) -> None:
+        """Register the safe deterministic engineering regression tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.regression",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic regression for engineering and "
+                    "scientific data, including linear regression, "
+                    "correlation, and linear prediction."
+                ),
+                capabilities=("engineering.regression",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Regression operation: linear, correlation, "
+                                "or predict."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="x_values",
+                            value_type=ToolValueType.ARRAY,
+                            required=True,
+                            description="Independent-variable dataset.",
+                        ),
+                        ToolArgument(
+                            name="y_values",
+                            value_type=ToolValueType.ARRAY,
+                            required=True,
+                            description="Dependent-variable dataset.",
+                        ),
+                        ToolArgument(
+                            name="x",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Prediction x-coordinate.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/regression",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            regression_handler,
         )
 
     def _register_statistics_tool(self) -> None:
