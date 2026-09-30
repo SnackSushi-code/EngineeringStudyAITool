@@ -38,6 +38,7 @@ from .matrix_math_tool import matrix_math_handler
 from .orchestrator import TaskOrchestrator
 from .policy import PolicyBroker, PolicyRule
 from .probability_tool import probability_handler
+from .interpolation_tool import interpolation_handler
 from .provider_registry import ProviderRegistry
 from .tool_contracts import (
     ToolArgument,
@@ -135,6 +136,7 @@ class RuntimeApplication:
         self._register_differential_equations_tool()
         self._register_statistics_tool()
         self._register_probability_tool()
+        self._register_interpolation_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -146,6 +148,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/probability",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/interpolation",
                     decision=PermissionDecision.ALLOW,
                 ),
                 PolicyRule(
@@ -1006,6 +1013,61 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             probability_handler,
+        )
+
+    def _register_interpolation_tool(self) -> None:
+        """Register the safe deterministic engineering interpolation tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.interpolation",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic interpolation for engineering and "
+                    "scientific data using linear, Lagrange, Newton divided "
+                    "difference, and natural cubic spline methods."
+                ),
+                capabilities=("engineering.interpolation",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Interpolation operation: linear, lagrange, "
+                                "newton, or cubic_spline."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="x_values",
+                            value_type=ToolValueType.ARRAY,
+                            required=True,
+                            description="Known x-coordinate dataset.",
+                        ),
+                        ToolArgument(
+                            name="y_values",
+                            value_type=ToolValueType.ARRAY,
+                            required=True,
+                            description="Known y-coordinate dataset.",
+                        ),
+                        ToolArgument(
+                            name="x",
+                            value_type=ToolValueType.NUMBER,
+                            required=True,
+                            description="Target x-coordinate to interpolate.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/interpolation",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            interpolation_handler,
         )
 
     def _register_statistics_tool(self) -> None:

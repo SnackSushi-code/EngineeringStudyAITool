@@ -716,3 +716,83 @@ def test_message_executes_statistics_through_production_path(
     assert result["response_text"] == (
         "The mean of the dataset [1, 2, 3, 4] is 2.5."
     )
+from pathlib import Path
+from uuid import uuid4
+import json
+
+
+def test_message_executes_interpolation_through_production_path(
+    tmp_path,
+    monkeypatch,
+):
+    repository_root = Path(__file__).resolve().parents[3]
+
+    request_id = str(uuid4())
+    task_id = str(uuid4())
+
+    def interpolation_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.interpolation",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "linear",
+                            "x_values": [0.0, 10.0],
+                            "y_values": [0.0, 20.0],
+                            "x": 2.5,
+                        },
+                    },
+                }
+            )
+
+        tool_message = model_request.messages[-1]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.interpolation"
+        assert '"operation": "linear"' in tool_message.content
+        assert '"result": 5.0' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": (
+                    "Linear interpolation gives a value of 5.0."
+                ),
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(interpolation_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": (
+                "Linearly interpolate the engineering data "
+                "at x=2.5."
+            ),
+            "conversation": [],
+        },
+    )
+
+    assert result["response_text"] == (
+        "Linear interpolation gives a value of 5.0."
+    )
+    assert result["stop_reason"] == "FINAL_RESPONSE"
