@@ -31,6 +31,7 @@ from .model_service import ModelService
 from .calculator_tool import calculator_handler
 from .complex_math_tool import complex_math_handler
 from .differential_equations_tool import differential_equations_handler
+from .statistics_tool import statistics_handler
 from .unit_conversion_tool import unit_conversion_handler
 from .vector_math_tool import vector_math_handler
 from .matrix_math_tool import matrix_math_handler
@@ -131,6 +132,7 @@ class RuntimeApplication:
         self._register_matrix_math_tool()
         self._register_complex_math_tool()
         self._register_differential_equations_tool()
+        self._register_statistics_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -169,6 +171,11 @@ class RuntimeApplication:
                     target_pattern="anne/runtime/differential-equations",
                     decision=PermissionDecision.ALLOW,
                 ),
+        PolicyRule(
+            permission_class=PermissionClass.READ,
+            target_pattern="anne/runtime/statistics",
+            decision=PermissionDecision.ALLOW,
+        ),
             ],
         )
         self._tool_executor = ToolExecutor(
@@ -919,4 +926,62 @@ class RuntimeApplication:
             datetime.now(timezone.utc)
             .isoformat()
             .replace("+00:00", "Z")
+        )
+
+    def _register_statistics_tool(self) -> None:
+        """Register the safe deterministic engineering statistics tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.statistics",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic statistics for engineering "
+                    "calculations, including sums, means, medians, "
+                    "modes, variance, standard deviation, extrema, "
+                    "percentiles, and RMS."
+                ),
+                capabilities=("engineering.statistics",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Statistics operation to perform.",
+                        ),
+                        ToolArgument(
+                            name="values",
+                            value_type=ToolValueType.ARRAY,
+                            required=True,
+                            description="Numeric dataset.",
+                        ),
+                        ToolArgument(
+                            name="sample",
+                            value_type=ToolValueType.BOOLEAN,
+                            required=False,
+                            description=(
+                                "Whether to calculate a sample statistic "
+                                "instead of a population statistic."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="percentile",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description=(
+                                "Percentile from 0 through 100."
+                            ),
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/statistics",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            statistics_handler,
         )

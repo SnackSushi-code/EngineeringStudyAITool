@@ -565,3 +565,82 @@ def test_message_executes_differential_equations_through_production_path(
             "y(0) = 1 over 0 to 1 is approximately 2.71828."
         )
     )
+
+def test_message_executes_statistics_through_production_path(
+    tmp_path,
+    monkeypatch,
+):
+    repository_root = Path(__file__).resolve().parents[3]
+
+    request_id = str(uuid4())
+    task_id = str(uuid4())
+
+    def statistics_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.statistics",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "mean",
+                            "values": [1, 2, 3, 4],
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.statistics"
+        assert '"operation": "mean"' in tool_message.content
+        assert '"result": 2.5' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": (
+                    "The mean of the dataset [1, 2, 3, 4] is 2.5."
+                ),
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(statistics_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": (
+                "Calculate the mean of [1, 2, 3, 4]."
+            ),
+            "conversation": [],
+        },
+    )
+
+    assert result["iterations"] == 2
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert result["response_text"] == (
+        "The mean of the dataset [1, 2, 3, 4] is 2.5."
+    )
