@@ -310,3 +310,80 @@ def test_message_executes_vector_math_through_production_path(tmp_path, monkeypa
     assert result["provider_version"] == "1.0.0"
     assert result["model"] == "deterministic-v1"
     assert result["response_text"] == "The vector magnitude is 5."
+def test_message_executes_matrix_math_through_production_path(
+    tmp_path,
+    monkeypatch,
+):
+    repository_root = Path(__file__).resolve().parents[3]
+
+    request_id = str(uuid4())
+    task_id = str(uuid4())
+
+    def matrix_math_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.matrix_math",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "multiply",
+                            "left": [[1, 2], [3, 4]],
+                            "right": [[5, 6], [7, 8]],
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.matrix_math"
+        assert '"result": [[19.0, 22.0], [43.0, 50.0]]' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "The matrix product is [[19, 22], [43, 50]].",
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(matrix_math_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": (
+                "Multiply the matrices [[1, 2], [3, 4]] "
+                "and [[5, 6], [7, 8]]."
+            ),
+            "conversation": [],
+        },
+    )
+
+    assert result["iterations"] == 2
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert result["response_text"] == (
+        "The matrix product is [[19, 22], [43, 50]]."
+    )

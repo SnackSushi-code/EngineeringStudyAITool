@@ -31,6 +31,7 @@ from .model_service import ModelService
 from .calculator_tool import calculator_handler
 from .unit_conversion_tool import unit_conversion_handler
 from .vector_math_tool import vector_math_handler
+from .matrix_math_tool import matrix_math_handler
 from .orchestrator import TaskOrchestrator
 from .policy import PolicyBroker, PolicyRule
 from .provider_registry import ProviderRegistry
@@ -125,6 +126,7 @@ class RuntimeApplication:
         self._register_calculator_tool()
         self._register_unit_conversion_tool()
         self._register_vector_math_tool()
+        self._register_matrix_math_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -146,6 +148,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/vector-math",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/matrix-math",
                     decision=PermissionDecision.ALLOW,
                 ),
             ],
@@ -302,6 +309,75 @@ class RuntimeApplication:
             vector_math_handler,
         )
 
+    def _register_matrix_math_tool(self) -> None:
+        """Register the safe deterministic engineering matrix-math tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.matrix_math",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic matrix mathematics for engineering "
+                    "calculations, including matrix arithmetic, multiplication, "
+                    "transposition, determinants, inverses, and matrix-vector products."
+                ),
+                capabilities=("engineering.matrix_math",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Matrix-math operation to perform.",
+                        ),
+                        ToolArgument(
+                            name="matrix",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="Single numeric matrix for unary operations.",
+                        ),
+                        ToolArgument(
+                            name="left",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="Left numeric matrix for binary operations.",
+                        ),
+                        ToolArgument(
+                            name="right",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="Right numeric matrix for binary operations.",
+                        ),
+                        ToolArgument(
+                            name="vector",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="Numeric vector for matrix-vector multiplication.",
+                        ),
+                        ToolArgument(
+                            name="scalar",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Numeric scalar for matrix scaling.",
+                        ),
+                        ToolArgument(
+                            name="size",
+                            value_type=ToolValueType.INTEGER,
+                            required=False,
+                            description="Positive matrix size for identity matrices.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/matrix-math",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            matrix_math_handler,
+        )
     def _register_calculator_tool(self) -> None:
         """Register the safe deterministic engineering calculator."""
         self._tool_registry.register(
