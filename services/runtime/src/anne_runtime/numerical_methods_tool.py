@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import ast
 import math
@@ -809,9 +809,17 @@ def numerical_methods_handler(
 ) -> Mapping[str, object]:
     context.raise_if_cancelled()
 
+    operation = str(arguments.get("operation", ""))
+
+    operation_arguments = {
+        key: value
+        for key, value in arguments.items()
+        if key != "operation"
+    }
+
     result = numerical_methods(
-        str(arguments.get("operation", "")),
-        **dict(arguments),
+        operation,
+        **operation_arguments,
     )
 
     context.raise_if_cancelled()

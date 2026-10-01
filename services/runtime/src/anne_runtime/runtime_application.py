@@ -31,6 +31,7 @@ from .model_service import ModelService
 from .calculator_tool import calculator_handler
 from .complex_math_tool import complex_math_handler
 from .differential_equations_tool import differential_equations_handler
+from .numerical_methods_tool import numerical_methods_handler
 from .statistics_tool import statistics_handler
 from .unit_conversion_tool import unit_conversion_handler
 from .vector_math_tool import vector_math_handler
@@ -135,6 +136,7 @@ class RuntimeApplication:
         self._register_matrix_math_tool()
         self._register_complex_math_tool()
         self._register_differential_equations_tool()
+        self._register_numerical_methods_tool()
         self._register_statistics_tool()
         self._register_probability_tool()
         self._register_interpolation_tool()
@@ -197,6 +199,11 @@ class RuntimeApplication:
             target_pattern="anne/runtime/statistics",
             decision=PermissionDecision.ALLOW,
         ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/numerical-methods",
+                    decision=PermissionDecision.ALLOW,
+                ),
             ],
         )
         self._tool_executor = ToolExecutor(
@@ -1132,6 +1139,105 @@ class RuntimeApplication:
             regression_handler,
         )
 
+
+    def _register_numerical_methods_tool(self) -> None:
+        """Register safe deterministic numerical engineering methods."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.numerical_methods",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic numerical methods for engineering "
+                    "calculations, including root finding, numerical "
+                    "integration, and finite differences."
+                ),
+                capabilities=("engineering.numerical_methods",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Numerical method operation: bisection, brent, "
+                                "newton, secant, trapezoidal, simpson, "
+                                "forward_difference, central_difference, "
+                                "or backward_difference."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="expression",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description="Safe mathematical expression.",
+                        ),
+                        ToolArgument(
+                            name="lower",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Lower bound for root finding or integration.",
+                        ),
+                        ToolArgument(
+                            name="upper",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Upper bound for root finding or integration.",
+                        ),
+                        ToolArgument(
+                            name="initial_guess",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Initial guess for Newton or secant methods.",
+                        ),
+                        ToolArgument(
+                            name="second_guess",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Second initial guess for the secant method.",
+                        ),
+                        ToolArgument(
+                            name="tolerance",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Numerical convergence tolerance.",
+                        ),
+                        ToolArgument(
+                            name="max_iterations",
+                            value_type=ToolValueType.INTEGER,
+                            required=False,
+                            description="Maximum number of root-finding iterations.",
+                        ),
+                        ToolArgument(
+                            name="steps",
+                            value_type=ToolValueType.INTEGER,
+                            required=False,
+                            description="Number of numerical integration steps.",
+                        ),
+                        ToolArgument(
+                            name="x",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Evaluation point for finite differences.",
+                        ),
+                        ToolArgument(
+                            name="step_size",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Positive finite-difference step size.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/numerical-methods",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            numerical_methods_handler,
+        )
     def _register_statistics_tool(self) -> None:
         """Register the safe deterministic engineering statistics tool."""
         self._tool_registry.register(

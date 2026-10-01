@@ -868,3 +868,75 @@ def test_message_executes_regression_through_production_path(
         "The regression line has a slope of 2.0."
     )
     assert result["stop_reason"] == "FINAL_RESPONSE"
+
+
+def test_runtime_application_executes_numerical_methods(
+    monkeypatch,
+):
+    """Numerical methods must execute through the production runtime path."""
+    from pathlib import Path
+
+    repository_root = Path(__file__).resolve().parents[3]
+
+    def numerical_methods_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": "00000000-0000-0000-0000-000000000101",
+                        "task_id": "00000000-0000-0000-0000-000000000102",
+                        "tool": "anne.numerical_methods",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "bisection",
+                            "expression": "x**2 - 2",
+                            "lower": 1.0,
+                            "upper": 2.0,
+                            "tolerance": 1e-6,
+                            "max_iterations": 100,
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.numerical_methods"
+        assert '"operation": "bisection"' in tool_message.content
+        assert '"converged": true' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "The root is approximately 1.41421356.",
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(numerical_methods_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=repository_root,
+    )
+
+    result = application.handle_message(
+        request_id="00000000-0000-0000-0000-000000000101",
+        task_id="00000000-0000-0000-0000-000000000102",
+        payload={
+            "user_intent": "Find the square root of 2 using bisection.",
+            "conversation": [],
+        },
+    )
+
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert "1.41421356" in result["response_text"]
