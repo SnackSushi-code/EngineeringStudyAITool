@@ -1010,3 +1010,71 @@ def test_runtime_application_executes_signal_processing(monkeypatch):
     assert result["response_text"] == (
         "The RMS value is approximately 3.5355."
     )
+
+def test_runtime_application_executes_frequency_domain_signal_processing(monkeypatch):
+    request_id = "00000000-0000-0000-0000-000000000005"
+    task_id = "00000000-0000-0000-0000-000000000006"
+
+    def frequency_domain_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.signal_processing.frequency_domain",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "fft",
+                            "values": [1.0, 0.0, 0.0, 0.0],
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.signal_processing.frequency_domain"
+        assert '"operation": "fft"' in tool_message.content
+        assert '"real": 1.0' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "The FFT was calculated successfully.",
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(frequency_domain_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=Path(__file__).resolve().parents[3]
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": "Calculate the FFT of [1, 0, 0, 0].",
+            "conversation": [],
+        },
+    )
+
+    assert result["iterations"] == 2
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert result["response_text"] == "The FFT was calculated successfully."

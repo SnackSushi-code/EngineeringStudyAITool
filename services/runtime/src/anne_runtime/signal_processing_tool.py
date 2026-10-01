@@ -224,3 +224,204 @@ def signal_processing_handler(
         context.raise_if_cancelled()
 
     return result
+
+MAX_FREQUENCY_SIGNAL_LENGTH = 65_536
+MAX_DFT_SIGNAL_LENGTH = 4_096
+
+
+def _validate_sample_rate(sample_rate: Any) -> float:
+    try:
+        numeric_sample_rate = float(sample_rate)
+    except (TypeError, ValueError) as exc:
+        raise SignalProcessingError(
+            "sample_rate must be a positive finite number"
+        ) from exc
+
+    if not math.isfinite(numeric_sample_rate) or numeric_sample_rate <= 0:
+        raise SignalProcessingError(
+            "sample_rate must be a positive finite number"
+        )
+
+    return numeric_sample_rate
+
+
+def _is_power_of_two(value: int) -> bool:
+    return value > 0 and (value & (value - 1)) == 0
+
+
+def _dft(values: list[float]) -> list[complex]:
+    size = len(values)
+
+    if size > MAX_DFT_SIGNAL_LENGTH:
+        raise SignalProcessingError(
+            f"DFT signal length exceeds maximum of {MAX_DFT_SIGNAL_LENGTH}"
+        )
+
+    spectrum: list[complex] = []
+
+    for frequency_index in range(size):
+        total = 0j
+
+        for sample_index, value in enumerate(values):
+            angle = (
+                -2.0
+                * math.pi
+                * frequency_index
+                * sample_index
+                / size
+            )
+            total += value * complex(
+                math.cos(angle),
+                math.sin(angle),
+            )
+
+        spectrum.append(total)
+
+    return spectrum
+
+
+def _fft(
+    values: list[float],
+    cancellation_check: Any = None,
+) -> list[complex]:
+    if cancellation_check is not None:
+        cancellation_check()
+
+    size = len(values)
+
+    if not _is_power_of_two(size):
+        raise SignalProcessingError(
+            "FFT signal length must be a power of two"
+        )
+
+    if size == 1:
+        return [complex(values[0], 0.0)]
+
+    even = _fft(values[0::2], cancellation_check)
+    odd = _fft(values[1::2], cancellation_check)
+
+    spectrum = [0j] * size
+
+    for index in range(size // 2):
+        angle = -2.0 * math.pi * index / size
+        twiddle = complex(
+            math.cos(angle),
+            math.sin(angle),
+        ) * odd[index]
+
+        spectrum[index] = even[index] + twiddle
+        spectrum[index + size // 2] = even[index] - twiddle
+
+        if cancellation_check is not None:
+            cancellation_check()
+
+    return spectrum
+
+
+def _serialize_spectrum(spectrum: list[complex]) -> list[dict[str, float]]:
+    return [
+        {
+            "real": value.real,
+            "imag": value.imag,
+        }
+        for value in spectrum
+    ]
+
+
+def frequency_domain(
+    operation: str,
+    *,
+    values: Any,
+    sample_rate: Any = None,
+    cancellation_check: Any = None,
+) -> dict[str, Any]:
+    """Perform deterministic frequency-domain signal processing."""
+
+    operation_name = str(operation).strip().lower()
+
+    if operation_name not in {
+        "dft",
+        "fft",
+        "magnitude_spectrum",
+    }:
+        raise SignalProcessingError(
+            "Unsupported frequency-domain operation: "
+            f"{operation_name}"
+        )
+
+    signal_values = _validate_values(
+        values,
+        "values",
+        MAX_FREQUENCY_SIGNAL_LENGTH,
+    )
+
+    if operation_name == "dft":
+        spectrum = _dft(signal_values)
+
+        return {
+            "operation": operation_name,
+            "spectrum": _serialize_spectrum(spectrum),
+        }
+
+    if operation_name == "fft":
+        spectrum = _fft(
+            signal_values,
+            cancellation_check,
+        )
+
+        return {
+            "operation": operation_name,
+            "spectrum": _serialize_spectrum(spectrum),
+        }
+
+    numeric_sample_rate = _validate_sample_rate(sample_rate)
+    spectrum = _fft(
+        signal_values,
+        cancellation_check,
+    )
+
+    return {
+        "operation": operation_name,
+        "frequencies": [
+            index * numeric_sample_rate / len(signal_values)
+            for index in range(len(signal_values))
+        ],
+        "magnitudes": [
+            abs(value)
+            for value in spectrum
+        ],
+        "sample_rate": numeric_sample_rate,
+    }
+
+
+def frequency_domain_handler(
+    context: Any,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    """Runtime tool handler for frequency-domain signal processing."""
+
+    if hasattr(context, "raise_if_cancelled"):
+        context.raise_if_cancelled()
+
+    operation = str(arguments.get("operation", ""))
+
+    operation_arguments = {
+        key: value
+        for key, value in arguments.items()
+        if key != "operation"
+    }
+
+    result = frequency_domain(
+        operation,
+        **operation_arguments,
+        cancellation_check=(
+            context.raise_if_cancelled
+            if hasattr(context, "raise_if_cancelled")
+            else None
+        ),
+    )
+
+    if hasattr(context, "raise_if_cancelled"):
+        context.raise_if_cancelled()
+
+    return result

@@ -41,7 +41,7 @@ from .policy import PolicyBroker, PolicyRule
 from .probability_tool import probability_handler
 from .interpolation_tool import interpolation_handler
 from .regression_tool import regression_handler
-from .signal_processing_tool import signal_processing_handler
+from .signal_processing_tool import frequency_domain_handler, signal_processing_handler
 from .provider_registry import ProviderRegistry
 from .tool_contracts import (
     ToolArgument,
@@ -1250,12 +1250,12 @@ class RuntimeApplication:
         self._tool_registry.register(
             ToolDescriptor(
                 tool_id="anne.signal_processing",
-                version="1.0.0",
+                version="1.1.0",
                 description=(
                     "Safe deterministic signal processing for engineering "
                     "data, including moving averages, RMS, peak analysis, "
                     "peak-to-peak measurements, discrete differences, "
-                    "and convolution."
+                    "convolution, DFT, FFT, and magnitude-spectrum analysis."
                 ),
                 capabilities=("engineering.signal_processing",),
                 arguments=ToolArgumentSchema(
@@ -1267,7 +1267,7 @@ class RuntimeApplication:
                             description=(
                                 "Signal-processing operation: moving_average, "
                                 "rms, peak, peak_to_peak, difference, "
-                                "or convolution."
+                                "convolution, dft, fft, or magnitude_spectrum."
                             ),
                         ),
                         ToolArgument(
@@ -1288,6 +1288,15 @@ class RuntimeApplication:
                             required=False,
                             description="Numeric convolution kernel.",
                         ),
+                        ToolArgument(
+                            name="sample_rate",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description=(
+                                "Positive finite sample rate for "
+                                "magnitude-spectrum analysis."
+                            ),
+                        ),
                     )
                 ),
                 required_permissions=(
@@ -1300,6 +1309,56 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             signal_processing_handler,
+        )
+
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.signal_processing.frequency_domain",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic frequency-domain signal processing "
+                    "for engineering data using DFT, FFT, and magnitude "
+                    "spectrum analysis."
+                ),
+                capabilities=("engineering.signal_processing.frequency_domain",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Frequency-domain operation: dft, fft, "
+                                "or magnitude_spectrum."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="values",
+                            value_type=ToolValueType.ARRAY,
+                            required=True,
+                            description="Numeric signal samples.",
+                        ),
+                        ToolArgument(
+                            name="sample_rate",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description=(
+                                "Positive finite sample rate required for "
+                                "magnitude-spectrum analysis."
+                            ),
+                        ),
+                    ),
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/signal-processing",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            frequency_domain_handler,
         )
 
     def _register_statistics_tool(self) -> None:

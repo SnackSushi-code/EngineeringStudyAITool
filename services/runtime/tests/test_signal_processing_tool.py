@@ -3,7 +3,10 @@ import math
 import pytest
 
 from anne_runtime.signal_processing_tool import (
+    _fft,
     SignalProcessingError,
+    frequency_domain,
+    frequency_domain_handler,
     signal_processing,
 )
 
@@ -160,3 +163,155 @@ def test_signal_processing_rejects_excessively_large_kernel():
             values=[1.0],
             kernel=[1.0] * 10_001,
         )
+
+def test_dft_returns_expected_impulse_spectrum():
+    result = frequency_domain(
+        "dft",
+        values=[1.0, 0.0, 0.0, 0.0],
+    )
+
+    assert result["operation"] == "dft"
+    assert result["spectrum"] == [
+        {"real": pytest.approx(1.0), "imag": pytest.approx(0.0)},
+        {"real": pytest.approx(1.0), "imag": pytest.approx(0.0)},
+        {"real": pytest.approx(1.0), "imag": pytest.approx(0.0)},
+        {"real": pytest.approx(1.0), "imag": pytest.approx(0.0)},
+    ]
+
+
+def test_fft_returns_expected_impulse_spectrum():
+    result = frequency_domain(
+        "fft",
+        values=[1.0, 0.0, 0.0, 0.0],
+    )
+
+    assert result["operation"] == "fft"
+    assert result["spectrum"] == [
+        {"real": pytest.approx(1.0), "imag": pytest.approx(0.0)},
+        {"real": pytest.approx(1.0), "imag": pytest.approx(0.0)},
+        {"real": pytest.approx(1.0), "imag": pytest.approx(0.0)},
+        {"real": pytest.approx(1.0), "imag": pytest.approx(0.0)},
+    ]
+
+
+def test_fft_matches_dft():
+    values = [1.0, 2.0, 3.0, 4.0]
+
+    dft = frequency_domain("dft", values=values)
+    fft = frequency_domain("fft", values=values)
+
+    for expected, actual in zip(dft["spectrum"], fft["spectrum"]):
+        assert actual["real"] == pytest.approx(expected["real"])
+        assert actual["imag"] == pytest.approx(expected["imag"])
+
+
+def test_magnitude_spectrum_returns_expected_values():
+    result = frequency_domain(
+        "magnitude_spectrum",
+        values=[1.0, 0.0, 0.0, 0.0],
+        sample_rate=100.0,
+    )
+
+    assert result["operation"] == "magnitude_spectrum"
+    assert result["frequencies"] == pytest.approx(
+        [0.0, 25.0, 50.0, 75.0]
+    )
+    assert result["magnitudes"] == pytest.approx(
+        [1.0, 1.0, 1.0, 1.0]
+    )
+    assert result["sample_rate"] == pytest.approx(100.0)
+
+
+def test_frequency_domain_rejects_non_power_of_two_fft():
+    with pytest.raises(
+        SignalProcessingError,
+        match="power of two",
+    ):
+        frequency_domain(
+            "fft",
+            values=[1.0, 2.0, 3.0],
+        )
+
+
+def test_frequency_domain_rejects_invalid_sample_rate():
+    with pytest.raises(
+        SignalProcessingError,
+        match="sample_rate",
+    ):
+        frequency_domain(
+            "magnitude_spectrum",
+            values=[1.0, 0.0, 0.0, 0.0],
+            sample_rate=0,
+        )
+
+
+def test_frequency_domain_rejects_unknown_operation():
+    with pytest.raises(
+        SignalProcessingError,
+        match="Unsupported frequency-domain operation",
+    ):
+        frequency_domain(
+            "wavelet",
+            values=[1.0, 2.0],
+        )
+
+
+def test_frequency_domain_rejects_excessively_large_signal():
+    with pytest.raises(
+        SignalProcessingError,
+        match="maximum length",
+    ):
+        frequency_domain(
+            "fft",
+            values=[1.0] * 100_001,
+        )
+
+
+def test_frequency_domain_rejects_nonfinite_sample_rate():
+    with pytest.raises(
+        SignalProcessingError,
+        match="sample_rate",
+    ):
+        frequency_domain(
+            "magnitude_spectrum",
+            values=[1.0, 0.0, 0.0, 0.0],
+            sample_rate=math.inf,
+        )
+
+def test_frequency_domain_dft_rejects_excessive_workload():
+    values = [0.0] * 4097
+
+    with pytest.raises(
+        SignalProcessingError,
+        match="DFT signal length exceeds maximum",
+    ):
+        frequency_domain(
+            "dft",
+            values=values,
+        )
+
+def test_frequency_domain_handler_honors_cancellation_during_fft():
+    class CancelledError(RuntimeError):
+        pass
+
+    class Context:
+        def __init__(self):
+            self.calls = 0
+
+        def raise_if_cancelled(self):
+            self.calls += 1
+            if self.calls >= 3:
+                raise CancelledError("cancelled")
+
+    context = Context()
+
+    with pytest.raises(CancelledError, match="cancelled"):
+        frequency_domain_handler(
+            context,
+            {
+                "operation": "fft",
+                "values": [float(index) for index in range(1024)],
+            },
+        )
+
+    assert context.calls >= 3
