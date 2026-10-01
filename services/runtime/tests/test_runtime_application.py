@@ -940,3 +940,73 @@ def test_runtime_application_executes_numerical_methods(
 
     assert result["stop_reason"] == "FINAL_RESPONSE"
     assert "1.41421356" in result["response_text"]
+
+def test_runtime_application_executes_signal_processing(monkeypatch):
+    request_id = "00000000-0000-0000-0000-000000000003"
+    task_id = "00000000-0000-0000-0000-000000000004"
+
+    def signal_processing_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.signal_processing",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "rms",
+                            "values": [3.0, 4.0],
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.signal_processing"
+        assert '"operation": "rms"' in tool_message.content
+        assert '"result": 3.5355339059327378' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "The RMS value is approximately 3.5355.",
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(signal_processing_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=Path(__file__).resolve().parents[3]
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": "Calculate the RMS of the signal [3, 4].",
+            "conversation": [],
+        },
+    )
+
+    assert result["iterations"] == 2
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert result["response_text"] == (
+        "The RMS value is approximately 3.5355."
+    )

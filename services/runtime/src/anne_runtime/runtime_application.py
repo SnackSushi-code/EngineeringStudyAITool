@@ -41,6 +41,7 @@ from .policy import PolicyBroker, PolicyRule
 from .probability_tool import probability_handler
 from .interpolation_tool import interpolation_handler
 from .regression_tool import regression_handler
+from .signal_processing_tool import signal_processing_handler
 from .provider_registry import ProviderRegistry
 from .tool_contracts import (
     ToolArgument,
@@ -141,6 +142,7 @@ class RuntimeApplication:
         self._register_probability_tool()
         self._register_interpolation_tool()
         self._register_regression_tool()
+        self._register_signal_processing_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -162,6 +164,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/regression",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/signal-processing",
                     decision=PermissionDecision.ALLOW,
                 ),
                 PolicyRule(
@@ -1238,6 +1245,63 @@ class RuntimeApplication:
             ),
             numerical_methods_handler,
         )
+    def _register_signal_processing_tool(self) -> None:
+        """Register the safe deterministic engineering signal-processing tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.signal_processing",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic signal processing for engineering "
+                    "data, including moving averages, RMS, peak analysis, "
+                    "peak-to-peak measurements, discrete differences, "
+                    "and convolution."
+                ),
+                capabilities=("engineering.signal_processing",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Signal-processing operation: moving_average, "
+                                "rms, peak, peak_to_peak, difference, "
+                                "or convolution."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="values",
+                            value_type=ToolValueType.ARRAY,
+                            required=True,
+                            description="Numeric signal samples.",
+                        ),
+                        ToolArgument(
+                            name="window",
+                            value_type=ToolValueType.INTEGER,
+                            required=False,
+                            description="Moving-average window length.",
+                        ),
+                        ToolArgument(
+                            name="kernel",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="Numeric convolution kernel.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/signal-processing",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            signal_processing_handler,
+        )
+
     def _register_statistics_tool(self) -> None:
         """Register the safe deterministic engineering statistics tool."""
         self._tool_registry.register(
