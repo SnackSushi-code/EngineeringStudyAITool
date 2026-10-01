@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -15,6 +15,13 @@ from .errors import ContractValidationError
 
 
 TOOL_CONTRACT_VERSION = "1.0"
+
+
+class ToolExecutionType(StrEnum):
+    """Describes where a tool executes without granting execution authority."""
+
+    NATIVE = "native"
+    EXTERNAL_SOFTWARE = "external_software"
 
 
 class ToolContractError(ContractValidationError):
@@ -128,6 +135,11 @@ class ToolDescriptor:
     required_permissions: tuple[PermissionScope, ...]
     retry_mode: RetryMode = RetryMode.NONE
     max_timeout_ms: int = 60_000
+    engineering_domain: str | None = None
+    execution_type: ToolExecutionType = ToolExecutionType.NATIVE
+    required_software: tuple[str, ...] = ()
+    input_artifact_types: tuple[str, ...] = ()
+    output_artifact_types: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.tool_id.strip():
@@ -138,6 +150,14 @@ class ToolDescriptor:
             raise ToolContractError("Tool maximum timeout must be positive.")
         if len(self.capabilities) != len(set(self.capabilities)):
             raise ToolContractError("Tool capabilities must be unique.")
+        if self.engineering_domain is not None and not self.engineering_domain.strip():
+            raise ToolContractError("Engineering domain cannot be blank.")
+        if len(self.required_software) != len(set(self.required_software)):
+            raise ToolContractError("Required software entries must be unique.")
+        if len(self.input_artifact_types) != len(set(self.input_artifact_types)):
+            raise ToolContractError("Input artifact types must be unique.")
+        if len(self.output_artifact_types) != len(set(self.output_artifact_types)):
+            raise ToolContractError("Output artifact types must be unique.")
 
         seen: set[tuple[object, str]] = set()
         for permission in self.required_permissions:
@@ -153,6 +173,11 @@ class ToolDescriptor:
             "version": self.version,
             "description": self.description,
             "capabilities": list(self.capabilities),
+            "engineering_domain": self.engineering_domain,
+            "execution_type": self.execution_type.value,
+            "required_software": list(self.required_software),
+            "input_artifact_types": list(self.input_artifact_types),
+            "output_artifact_types": list(self.output_artifact_types),
             "arguments": [
                 {
                     "name": item.name,

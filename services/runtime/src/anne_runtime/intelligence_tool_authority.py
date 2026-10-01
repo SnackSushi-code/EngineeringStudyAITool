@@ -48,7 +48,15 @@ class ToolCapabilityCatalog:
                     "version": d.version,
                     "description": d.description,
                     "capabilities": sorted(d.capabilities),
-                    "arguments": {"required": sorted(required), "properties": props},
+                    "engineering_domain": d.engineering_domain,
+                    "execution_type": d.execution_type.value,
+                    "required_software": sorted(d.required_software),
+                    "input_artifact_types": sorted(d.input_artifact_types),
+                    "output_artifact_types": sorted(d.output_artifact_types),
+                    "arguments": {
+                        "required": sorted(required),
+                        "properties": props,
+                    },
                 }
             )
         return tuple(entries)
