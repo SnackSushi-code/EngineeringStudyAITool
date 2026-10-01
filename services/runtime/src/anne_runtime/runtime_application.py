@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -34,6 +34,7 @@ from .kinematics_tool import kinematics_handler
 from .dynamics_tool import dynamics_handler
 from .statics_tool import statics_handler
 from .strength_of_materials_tool import strength_of_materials_handler
+from .fluid_mechanics_tool import fluid_mechanics_handler
 from .complex_math_tool import complex_math_handler
 from .differential_equations_tool import differential_equations_handler
 from .numerical_methods_tool import numerical_methods_handler
@@ -154,6 +155,7 @@ class RuntimeApplication:
         self._register_dynamics_tool()
         self._register_statics_tool()
         self._register_strength_of_materials_tool()
+        self._register_fluid_mechanics_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -1823,6 +1825,191 @@ class RuntimeApplication:
             statics_handler,
         )
 
+    def _register_fluid_mechanics_tool(self) -> None:
+        """Register the safe deterministic engineering fluid mechanics tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.fluid_mechanics",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic engineering fluid mechanics "
+                    "calculations for pressure, hydrostatics, flow, "
+                    "Reynolds number, Bernoulli analysis, buoyancy, "
+                    "and hydraulic power."
+                ),
+                capabilities=("engineering.fluid_mechanics",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Fluid mechanics operation: pressure, "
+                                "hydrostatic_pressure, absolute_pressure, "
+                                "gauge_pressure, density, specific_weight, "
+                                "continuity, volumetric_flow_rate, "
+                                "mass_flow_rate, dynamic_pressure, "
+                                "reynolds_number, hydraulic_power, "
+                                "buoyant_force, or bernoulli_velocity."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="force",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Applied force.",
+                        ),
+                        ToolArgument(
+                            name="area",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Cross-sectional area.",
+                        ),
+                        ToolArgument(
+                            name="density",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Fluid density.",
+                        ),
+                        ToolArgument(
+                            name="gravity",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Gravitational acceleration.",
+                        ),
+                        ToolArgument(
+                            name="depth",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Fluid depth.",
+                        ),
+                        ToolArgument(
+                            name="gauge_pressure",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Gauge pressure.",
+                        ),
+                        ToolArgument(
+                            name="atmospheric_pressure",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Atmospheric pressure.",
+                        ),
+                        ToolArgument(
+                            name="absolute_pressure",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Absolute pressure.",
+                        ),
+                        ToolArgument(
+                            name="mass",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Mass.",
+                        ),
+                        ToolArgument(
+                            name="volume",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Volume.",
+                        ),
+                        ToolArgument(
+                            name="area_1",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Upstream cross-sectional area.",
+                        ),
+                        ToolArgument(
+                            name="velocity_1",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Upstream velocity.",
+                        ),
+                        ToolArgument(
+                            name="area_2",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Downstream cross-sectional area.",
+                        ),
+                        ToolArgument(
+                            name="velocity",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Fluid velocity.",
+                        ),
+                        ToolArgument(
+                            name="volumetric_flow_rate",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Volumetric flow rate.",
+                        ),
+                        ToolArgument(
+                            name="characteristic_length",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Characteristic length.",
+                        ),
+                        ToolArgument(
+                            name="dynamic_viscosity",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Dynamic viscosity.",
+                        ),
+                        ToolArgument(
+                            name="head",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Hydraulic head.",
+                        ),
+                        ToolArgument(
+                            name="displaced_volume",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Displaced fluid volume.",
+                        ),
+                        ToolArgument(
+                            name="pressure_1",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Pressure at point 1.",
+                        ),
+                        ToolArgument(
+                            name="pressure_2",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Pressure at point 2.",
+                        ),
+                        ToolArgument(
+                            name="elevation_1",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Elevation at point 1.",
+                        ),
+                        ToolArgument(
+                            name="elevation_2",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Elevation at point 2.",
+                        ),
+                    )
+                ),
+                engineering_domain="mechanical",
+                execution_type=ToolExecutionType.NATIVE,
+                required_software=(),
+                input_artifact_types=("fluid_mechanics_specification",),
+                output_artifact_types=("calculation_result",),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/fluid_mechanics",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            fluid_mechanics_handler,
+        )
     def _register_strength_of_materials_tool(self) -> None:
         """Register the safe deterministic engineering strength-of-materials tool."""
         self._tool_registry.register(
@@ -2034,3 +2221,4 @@ class RuntimeApplication:
             ),
             statistics_handler,
         )
+
