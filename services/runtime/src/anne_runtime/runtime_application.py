@@ -32,6 +32,7 @@ from .calculator_tool import calculator_handler
 from .circuit_analysis_tool import circuit_analysis_handler
 from .kinematics_tool import kinematics_handler
 from .dynamics_tool import dynamics_handler
+from .statics_tool import statics_handler
 from .complex_math_tool import complex_math_handler
 from .differential_equations_tool import differential_equations_handler
 from .numerical_methods_tool import numerical_methods_handler
@@ -150,6 +151,7 @@ class RuntimeApplication:
         self._register_circuit_analysis_tool()
         self._register_kinematics_tool()
         self._register_dynamics_tool()
+        self._register_statics_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -191,6 +193,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/dynamics",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/statics",
                     decision=PermissionDecision.ALLOW,
                 ),
                 PolicyRule(
@@ -1697,6 +1704,116 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             dynamics_handler,
+        )
+
+    def _register_statics_tool(self) -> None:
+        """Register the safe deterministic engineering statics tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.statics",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic engineering statics for force "
+                    "components, resultant forces, moments, and equilibrium "
+                    "calculations."
+                ),
+                capabilities=("engineering.statics",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Statics operation: force_components, "
+                                "resultant_force, resultant_angle, "
+                                "moment_2d, moment_from_force, "
+                                "equilibrium_force, or equilibrium_check."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="magnitude",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Force magnitude.",
+                        ),
+                        ToolArgument(
+                            name="angle_degrees",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Force angle in degrees.",
+                        ),
+                        ToolArgument(
+                            name="fx",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Force x-component.",
+                        ),
+                        ToolArgument(
+                            name="fy",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Force y-component.",
+                        ),
+                        ToolArgument(
+                            name="x",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Position x-coordinate.",
+                        ),
+                        ToolArgument(
+                            name="y",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Position y-coordinate.",
+                        ),
+                        ToolArgument(
+                            name="force",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Force magnitude.",
+                        ),
+                        ToolArgument(
+                            name="perpendicular_distance",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Perpendicular distance from the moment center.",
+                        ),
+                        ToolArgument(
+                            name="fx_sum",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Sum of force x-components.",
+                        ),
+                        ToolArgument(
+                            name="fy_sum",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Sum of force y-components.",
+                        ),
+                        ToolArgument(
+                            name="moment_sum",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Sum of moments.",
+                        ),
+                    )
+                ),
+                engineering_domain="mechanical",
+                execution_type=ToolExecutionType.NATIVE,
+                required_software=(),
+                input_artifact_types=("statics_specification",),
+                output_artifact_types=("calculation_result",),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/statics",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            statics_handler,
         )
 
     def _register_statistics_tool(self) -> None:
