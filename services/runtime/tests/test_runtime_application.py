@@ -1011,6 +1011,85 @@ def test_runtime_application_executes_signal_processing(monkeypatch):
         "The RMS value is approximately 3.5355."
     )
 
+
+def test_runtime_application_executes_circuit_analysis_tool_production_path(
+    monkeypatch,
+):
+    request_id = "00000000-0000-0000-0000-000000000007"
+    task_id = "00000000-0000-0000-0000-000000000008"
+
+    def circuit_analysis_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.circuit_analysis",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "ohms_law",
+                            "voltage": 12.0,
+                            "resistance": 4.0,
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+
+        tool_message = model_request.messages[2]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.circuit_analysis"
+        assert '"operation": "ohms_law"' in tool_message.content
+        assert '"current": 3.0' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": (
+                    "Ohm's law calculated the current successfully."
+                ),
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(circuit_analysis_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=Path(__file__).resolve().parents[3]
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": (
+                "Calculate the current through a 4 ohm resistor at 12 volts."
+            ),
+            "conversation": [],
+        },
+    )
+
+    assert result["iterations"] == 2
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert result["response_text"] == (
+        "Ohm's law calculated the current successfully."
+    )
+
+
 def test_runtime_application_executes_frequency_domain_signal_processing(monkeypatch):
     request_id = "00000000-0000-0000-0000-000000000005"
     task_id = "00000000-0000-0000-0000-000000000006"

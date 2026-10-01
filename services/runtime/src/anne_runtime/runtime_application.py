@@ -29,6 +29,7 @@ from .intelligence_tool_authority import (
 from .model_router import ModelRouter
 from .model_service import ModelService
 from .calculator_tool import calculator_handler
+from .circuit_analysis_tool import circuit_analysis_handler
 from .complex_math_tool import complex_math_handler
 from .differential_equations_tool import differential_equations_handler
 from .numerical_methods_tool import numerical_methods_handler
@@ -143,6 +144,7 @@ class RuntimeApplication:
         self._register_interpolation_tool()
         self._register_regression_tool()
         self._register_signal_processing_tool()
+        self._register_circuit_analysis_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -169,6 +171,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/signal-processing",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/circuit-analysis",
                     decision=PermissionDecision.ALLOW,
                 ),
                 PolicyRule(
@@ -1359,6 +1366,124 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             frequency_domain_handler,
+        )
+
+    def _register_circuit_analysis_tool(self) -> None:
+        """Register the safe deterministic engineering circuit-analysis tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.circuit_analysis",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic circuit analysis including Ohm's law, "
+                    "series and parallel resistance, voltage and current "
+                    "dividers, power, energy, and RC/RL time constants."
+                ),
+                capabilities=("engineering.circuit_analysis",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Circuit-analysis operation: ohms_law, "
+                                "series_resistance, parallel_resistance, "
+                                "voltage_divider, current_divider, power, "
+                                "energy, rc_time_constant, or "
+                                "rl_time_constant."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="voltage",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Voltage in volts.",
+                        ),
+                        ToolArgument(
+                            name="current",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Current in amperes.",
+                        ),
+                        ToolArgument(
+                            name="resistance",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Resistance in ohms.",
+                        ),
+                        ToolArgument(
+                            name="resistances",
+                            value_type=ToolValueType.ARRAY,
+                            required=False,
+                            description="List of positive resistances in ohms.",
+                        ),
+                        ToolArgument(
+                            name="input_voltage",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Divider input voltage in volts.",
+                        ),
+                        ToolArgument(
+                            name="r1",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="First divider resistance in ohms.",
+                        ),
+                        ToolArgument(
+                            name="r2",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Second divider resistance in ohms.",
+                        ),
+                        ToolArgument(
+                            name="total_current",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Total divider current in amperes.",
+                        ),
+                        ToolArgument(
+                            name="power",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Power in watts.",
+                        ),
+                        ToolArgument(
+                            name="time_seconds",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Elapsed time in seconds.",
+                        ),
+                        ToolArgument(
+                            name="resistance_ohms",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Resistance in ohms for time constants.",
+                        ),
+                        ToolArgument(
+                            name="capacitance_farads",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Capacitance in farads.",
+                        ),
+                        ToolArgument(
+                            name="inductance_henries",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Inductance in henries.",
+                        ),
+                    )
+                ),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/circuit-analysis",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            circuit_analysis_handler,
         )
 
     def _register_statistics_tool(self) -> None:
