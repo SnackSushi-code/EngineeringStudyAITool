@@ -30,6 +30,7 @@ from .model_router import ModelRouter
 from .model_service import ModelService
 from .calculator_tool import calculator_handler
 from .circuit_analysis_tool import circuit_analysis_handler
+from .kinematics_tool import kinematics_handler
 from .complex_math_tool import complex_math_handler
 from .differential_equations_tool import differential_equations_handler
 from .numerical_methods_tool import numerical_methods_handler
@@ -48,6 +49,7 @@ from .tool_contracts import (
     ToolArgument,
     ToolArgumentSchema,
     ToolDescriptor,
+    ToolExecutionType,
     ToolValueType,
 )
 from .tool_executor import ToolExecutor
@@ -145,6 +147,7 @@ class RuntimeApplication:
         self._register_regression_tool()
         self._register_signal_processing_tool()
         self._register_circuit_analysis_tool()
+        self._register_kinematics_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -176,6 +179,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/circuit-analysis",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/kinematics",
                     decision=PermissionDecision.ALLOW,
                 ),
                 PolicyRule(
@@ -1484,6 +1492,101 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             circuit_analysis_handler,
+        )
+
+    def _register_kinematics_tool(self) -> None:
+        """Register the safe deterministic engineering kinematics tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.kinematics",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic engineering kinematics for "
+                    "velocity, displacement, acceleration, time, and "
+                    "projectile-motion calculations."
+                ),
+                capabilities=("engineering.kinematics",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Kinematics operation: velocity, displacement, "
+                                "final_velocity_from_displacement, acceleration, "
+                                "time_from_velocity, projectile_time, "
+                                "projectile_range, or projectile_max_height."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="initial_velocity",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Initial velocity in m/s.",
+                        ),
+                        ToolArgument(
+                            name="final_velocity",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Final velocity in m/s.",
+                        ),
+                        ToolArgument(
+                            name="acceleration",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Acceleration in m/s^2.",
+                        ),
+                        ToolArgument(
+                            name="time",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Elapsed time in seconds.",
+                        ),
+                        ToolArgument(
+                            name="displacement",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Displacement in meters.",
+                        ),
+                        ToolArgument(
+                            name="initial_speed",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Initial projectile speed in m/s.",
+                        ),
+                        ToolArgument(
+                            name="launch_angle_degrees",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Projectile launch angle in degrees.",
+                        ),
+                        ToolArgument(
+                            name="gravity",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description=(
+                                "Positive gravitational acceleration in m/s^2. "
+                                "Defaults to standard gravity."
+                            ),
+                        ),
+                    ),
+                ),
+                engineering_domain="mechanical",
+                execution_type=ToolExecutionType.NATIVE,
+                required_software=(),
+                input_artifact_types=("motion_specification",),
+                output_artifact_types=("calculation_result",),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/kinematics",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            kinematics_handler,
         )
 
     def _register_statistics_tool(self) -> None:

@@ -1157,3 +1157,86 @@ def test_runtime_application_executes_frequency_domain_signal_processing(monkeyp
     assert result["provider_version"] == "1.0.0"
     assert result["model"] == "deterministic-v1"
     assert result["response_text"] == "The FFT was calculated successfully."
+def test_runtime_application_executes_kinematics_tool_production_path(
+    monkeypatch,
+):
+    request_id = "00000000-0000-0000-0000-000000000009"
+    task_id = "00000000-0000-0000-0000-000000000010"
+
+    def kinematics_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.kinematics",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "velocity",
+                            "initial_velocity": 5.0,
+                            "acceleration": 2.0,
+                            "time": 4.0,
+                        },
+                    },
+                }
+            )
+
+        tool_message = model_request.messages[-1]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.kinematics"
+        assert '"operation": "velocity"' in tool_message.content
+        assert '"result": 13.0' in tool_message.content
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "The final velocity is 13 m/s.",
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(kinematics_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=Path(__file__).resolve().parents[3],
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": "Calculate final velocity from 5 m/s, 2 m/s^2, over 4 seconds.",
+            "conversation": [],
+        },
+    )
+
+    assert result["iterations"] == 2
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["response_text"] == "The final velocity is 13 m/s."
+
+
+def test_runtime_application_registers_kinematics_with_engineering_metadata():
+    application = RuntimeApplication(
+        repository_root=Path(__file__).resolve().parents[3],
+    )
+
+    descriptor, handler = application._tool_registry.get("anne.kinematics")
+
+    assert descriptor.tool_id == "anne.kinematics"
+    assert callable(handler)
+    assert descriptor.version == "1.0.0"
+    assert descriptor.capabilities == ("engineering.kinematics",)
+    assert descriptor.engineering_domain == "mechanical"
+    assert descriptor.execution_type.value == "native"
+    assert descriptor.required_software == ()
+    assert descriptor.input_artifact_types == ("motion_specification",)
+    assert descriptor.output_artifact_types == ("calculation_result",)
