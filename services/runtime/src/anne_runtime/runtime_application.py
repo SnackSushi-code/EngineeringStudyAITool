@@ -31,6 +31,7 @@ from .model_service import ModelService
 from .calculator_tool import calculator_handler
 from .circuit_analysis_tool import circuit_analysis_handler
 from .kinematics_tool import kinematics_handler
+from .dynamics_tool import dynamics_handler
 from .complex_math_tool import complex_math_handler
 from .differential_equations_tool import differential_equations_handler
 from .numerical_methods_tool import numerical_methods_handler
@@ -148,6 +149,7 @@ class RuntimeApplication:
         self._register_signal_processing_tool()
         self._register_circuit_analysis_tool()
         self._register_kinematics_tool()
+        self._register_dynamics_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -184,6 +186,11 @@ class RuntimeApplication:
                 PolicyRule(
                     permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/kinematics",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/dynamics",
                     decision=PermissionDecision.ALLOW,
                 ),
                 PolicyRule(
@@ -1587,6 +1594,109 @@ class RuntimeApplication:
                 max_timeout_ms=1000,
             ),
             kinematics_handler,
+        )
+
+    def _register_dynamics_tool(self) -> None:
+        """Register the safe deterministic engineering dynamics tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.dynamics",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic engineering dynamics for force, mass, "
+                    "acceleration, weight, momentum, energy, work, and power "
+                    "calculations."
+                ),
+                capabilities=("engineering.dynamics",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Dynamics operation: force, mass_from_force, "
+                                "acceleration_from_force, weight, momentum, "
+                                "kinetic_energy, potential_energy, work, or power."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="mass",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Mass in kilograms.",
+                        ),
+                        ToolArgument(
+                            name="acceleration",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Acceleration in m/s^2.",
+                        ),
+                        ToolArgument(
+                            name="force",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Force in newtons.",
+                        ),
+                        ToolArgument(
+                            name="gravity",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Positive gravitational acceleration in m/s^2.",
+                        ),
+                        ToolArgument(
+                            name="velocity",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Velocity in m/s.",
+                        ),
+                        ToolArgument(
+                            name="height",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Height in meters.",
+                        ),
+                        ToolArgument(
+                            name="displacement",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Displacement in meters.",
+                        ),
+                        ToolArgument(
+                            name="angle_degrees",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Work angle in degrees from 0 through 180.",
+                        ),
+                        ToolArgument(
+                            name="work",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Work in joules.",
+                        ),
+                        ToolArgument(
+                            name="time",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Time in seconds.",
+                        ),
+                    ),
+                ),
+                engineering_domain="mechanical",
+                execution_type=ToolExecutionType.NATIVE,
+                required_software=(),
+                input_artifact_types=("dynamics_specification",),
+                output_artifact_types=("calculation_result",),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/dynamics",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            dynamics_handler,
         )
 
     def _register_statistics_tool(self) -> None:
