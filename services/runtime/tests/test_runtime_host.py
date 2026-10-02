@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -164,14 +164,33 @@ def test_host_process_multiple_requests() -> None:
         for line in lines
     ]
 
-    assert responses[0].request_id == requests[0].request_id
-    assert responses[0].status == "completed"
+    response_by_id = {
+        (response.request_id, response.task_id): response
+        for response in responses
+    }
 
-    assert responses[1].request_id == requests[1].request_id
-    assert responses[1].status == "completed"
+    request_by_id = {
+        (request.request_id, request.task_id): request
+        for request in requests
+    }
 
-    assert responses[2].request_id == requests[2].request_id
-    assert responses[2].status == "failed"
+    assert set(response_by_id.keys()) == set(request_by_id.keys())
+
+    first_response = response_by_id[
+        (requests[0].request_id, requests[0].task_id)
+    ]
+
+    second_response = response_by_id[
+        (requests[1].request_id, requests[1].task_id)
+    ]
+
+    third_response = response_by_id[
+        (requests[2].request_id, requests[2].task_id)
+    ]
+
+    assert first_response.status == "completed"
+    assert second_response.status == "completed"
+    assert third_response.status == "failed"
 
 
 def test_host_processes_requests_concurrently(monkeypatch) -> None:

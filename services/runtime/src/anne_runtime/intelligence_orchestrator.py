@@ -13,6 +13,10 @@ from .intelligence_contracts import (
     IntelligenceResult,
     IntelligenceToolProposal,
 )
+from .engineering_capability_router import (
+    EngineeringCapabilityRequest,
+    EngineeringCapabilityRouter,
+)
 from .intelligence_tool_authority import ToolCapabilityCatalog
 from .model_contracts import FinishReason
 from .model_service import ModelService
@@ -47,9 +51,11 @@ class IntelligenceOrchestrator:
         self,
         model_service: ModelService,
         capability_catalog: ToolCapabilityCatalog | None = None,
+        engineering_router: EngineeringCapabilityRouter | None = None,
     ) -> None:
         self._model_service = model_service
         self._capability_catalog = capability_catalog
+        self._engineering_router = engineering_router
 
     def process(self, request: IntelligenceRequest) -> IntelligenceInvocation:
         if not isinstance(request, IntelligenceRequest):
@@ -58,14 +64,95 @@ class IntelligenceOrchestrator:
             )
 
         model_request = request.to_model_request()
+
+        metadata = dict(model_request.metadata)
+
         if self._capability_catalog is not None:
-            model_request = replace(
-                model_request,
-                metadata={
-                    **dict(model_request.metadata),
-                    "anne.tool_catalog": self._capability_catalog.as_metadata_json(),
-                },
+            metadata["anne.tool_catalog"] = (
+                self._capability_catalog.as_metadata_json()
             )
+
+        if self._engineering_router is not None:
+            capability = metadata.get("anne.engineering.capability")
+
+            if capability is not None:
+                engineering_request = EngineeringCapabilityRequest(
+                    capability=capability,
+                    engineering_domain=metadata.get(
+                        "anne.engineering.domain"
+                    ),
+                    execution_type=metadata.get(
+                        "anne.engineering.execution_type"
+                    ),
+                    required_software=tuple(
+                        item.strip()
+                        for item in metadata.get(
+                            "anne.engineering.required_software",
+                            "",
+                        ).split(",")
+                        if item.strip()
+                    ),
+                    available_software=tuple(
+                        item.strip()
+                        for item in metadata.get(
+                            "anne.engineering.available_software",
+                            "",
+                        ).split(",")
+                        if item.strip()
+                    ),
+                    input_artifact_types=tuple(
+                        item.strip()
+                        for item in metadata.get(
+                            "anne.engineering.input_artifacts",
+                            "",
+                        ).split(",")
+                        if item.strip()
+                    ),
+                    output_artifact_types=tuple(
+                        item.strip()
+                        for item in metadata.get(
+                            "anne.engineering.output_artifacts",
+                            "",
+                        ).split(",")
+                        if item.strip()
+                    ),
+                )
+
+                candidates = self._engineering_router.route(
+                    engineering_request
+                )
+
+                metadata["anne.engineering_candidates"] = json.dumps(
+                    [
+                        {
+                            "tool_id": candidate.tool_id,
+                            "version": candidate.version,
+                            "description": candidate.description,
+                            "engineering_domain": candidate.engineering_domain,
+                            "execution_type": candidate.execution_type,
+                            "required_software": list(
+                                candidate.required_software
+                            ),
+                            "input_artifact_types": list(
+                                candidate.input_artifact_types
+                            ),
+                            "output_artifact_types": list(
+                                candidate.output_artifact_types
+                            ),
+                            "score": candidate.score,
+                            "match_reasons": list(
+                                candidate.match_reasons
+                            ),
+                        }
+                        for candidate in candidates
+                    ],
+                    separators=(",", ":"),
+                )
+
+        model_request = replace(
+            model_request,
+            metadata=metadata,
+        )
 
         try:
             invocation = self._model_service.invoke(model_request)

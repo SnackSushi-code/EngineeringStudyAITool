@@ -19,6 +19,7 @@ from .deterministic_provider import DeterministicModelProvider
 from .execution import ExecutionCoordinator
 from .gemini_provider import GeminiModelProvider
 from .intelligence_contracts import IntelligenceRequest
+from .engineering_capability_router import EngineeringCapabilityRouter
 from .intelligence_orchestrator import IntelligenceOrchestrator
 from .intelligence_planning_loop import IntelligencePlanningLoop
 from .intelligence_runtime_bridge import IntelligenceRuntimeBridge
@@ -282,11 +283,16 @@ class RuntimeApplication:
             self._tool_registry,
         )
 
+        self._engineering_capability_router = EngineeringCapabilityRouter(
+            self._capability_catalog.snapshot(),
+        )
+
         self._model_service = self._build_model_service()
 
         self._intelligence = IntelligenceOrchestrator(
             self._model_service,
             capability_catalog=self._capability_catalog,
+            engineering_router=self._engineering_capability_router,
         )
 
         self._runtime_bridge = IntelligenceRuntimeBridge(
