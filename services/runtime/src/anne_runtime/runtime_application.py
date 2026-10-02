@@ -35,6 +35,7 @@ from .dynamics_tool import dynamics_handler
 from .statics_tool import statics_handler
 from .strength_of_materials_tool import strength_of_materials_handler
 from .fluid_mechanics_tool import fluid_mechanics_handler
+from .thermodynamics_tool import thermodynamics_handler
 from .complex_math_tool import complex_math_handler
 from .differential_equations_tool import differential_equations_handler
 from .numerical_methods_tool import numerical_methods_handler
@@ -156,6 +157,7 @@ class RuntimeApplication:
         self._register_statics_tool()
         self._register_strength_of_materials_tool()
         self._register_fluid_mechanics_tool()
+        self._register_thermodynamics_tool()
 
         self._policy = PolicyBroker(
             rules=[
@@ -2010,6 +2012,164 @@ class RuntimeApplication:
             ),
             fluid_mechanics_handler,
         )
+    def _register_thermodynamics_tool(self) -> None:
+        """Register the safe deterministic engineering thermodynamics tool."""
+        self._tool_registry.register(
+            ToolDescriptor(
+                tool_id="anne.thermodynamics",
+                version="1.0.0",
+                description=(
+                    "Safe deterministic engineering thermodynamics "
+                    "calculations for ideal gases, heat transfer, "
+                    "specific heat, latent heat, thermal efficiency, "
+                    "refrigeration, heat pumps, the first law, and entropy."
+                ),
+                capabilities=("engineering.thermodynamics",),
+                arguments=ToolArgumentSchema(
+                    arguments=(
+                        ToolArgument(
+                            name="operation",
+                            value_type=ToolValueType.STRING,
+                            required=True,
+                            description=(
+                                "Thermodynamics operation: ideal_gas_pressure, "
+                                "ideal_gas_volume, ideal_gas_temperature, "
+                                "ideal_gas_moles, density_ideal_gas, "
+                                "specific_gas_constant, heat_transfer, "
+                                "sensible_heat, latent_heat, thermal_efficiency, "
+                                "refrigeration_cop, heat_pump_cop, first_law, "
+                                "or entropy."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="pressure",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Absolute gas pressure.",
+                        ),
+                        ToolArgument(
+                            name="volume",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Gas volume.",
+                        ),
+                        ToolArgument(
+                            name="temperature",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Absolute temperature in kelvin.",
+                        ),
+                        ToolArgument(
+                            name="moles",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Amount of substance in moles.",
+                        ),
+                        ToolArgument(
+                            name="gas_constant",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description=(
+                                "Specific or universal gas constant, "
+                                "depending on the selected operation."
+                            ),
+                        ),
+                        ToolArgument(
+                            name="molar_mass",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Molar mass of the gas.",
+                        ),
+                        ToolArgument(
+                            name="specific_heat",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Specific heat capacity.",
+                        ),
+                        ToolArgument(
+                            name="mass",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Mass of the substance.",
+                        ),
+                        ToolArgument(
+                            name="temperature_change",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Temperature change.",
+                        ),
+                        ToolArgument(
+                            name="latent_heat",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Specific latent heat.",
+                        ),
+                        ToolArgument(
+                            name="heat",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Heat transfer.",
+                        ),
+                        ToolArgument(
+                            name="work",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Work transfer.",
+                        ),
+                        ToolArgument(
+                            name="internal_energy_change",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Change in internal energy.",
+                        ),
+                        ToolArgument(
+                            name="heat_in",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Heat input to a thermal engine.",
+                        ),
+                        ToolArgument(
+                            name="heat_out",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Heat rejected by a thermal engine.",
+                        ),
+                        ToolArgument(
+                            name="refrigeration_effect",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Heat removed from the refrigerated space.",
+                        ),
+                        ToolArgument(
+                            name="work_input",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Work input to a refrigeration or heat-pump cycle.",
+                        ),
+                        ToolArgument(
+                            name="entropy_change",
+                            value_type=ToolValueType.NUMBER,
+                            required=False,
+                            description="Entropy change.",
+                        ),
+                    )
+                ),
+                engineering_domain="mechanical",
+                execution_type=ToolExecutionType.NATIVE,
+                required_software=(),
+                input_artifact_types=("thermodynamics_specification",),
+                output_artifact_types=("calculation_result",),
+                required_permissions=(
+                    PermissionScope(
+                        PermissionClass.READ,
+                        "anne/runtime/thermodynamics",
+                    ),
+                ),
+                retry_mode=RetryMode.NONE,
+                max_timeout_ms=1000,
+            ),
+            thermodynamics_handler,
+        )
     def _register_strength_of_materials_tool(self) -> None:
         """Register the safe deterministic engineering strength-of-materials tool."""
         self._tool_registry.register(
@@ -2221,4 +2381,3 @@ class RuntimeApplication:
             ),
             statistics_handler,
         )
-
