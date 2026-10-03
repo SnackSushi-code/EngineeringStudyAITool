@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from dataclasses import dataclass
@@ -11,6 +11,7 @@ from .intelligence_contracts import (
     IntelligenceRequest,
     IntelligenceToolProposal,
 )
+from .engineering_result import EngineeringHandoff
 from .intelligence_orchestrator import IntelligenceInvocation, IntelligenceOrchestrator
 from .intelligence_runtime_bridge import IntelligenceRuntimeBridge
 from .orchestrator import TaskOutcome
@@ -57,6 +58,7 @@ class IntelligencePlanningLoop:
         runtime_bridge: IntelligenceRuntimeBridge,
         *,
         max_iterations: int = 8,
+        engineering_tool_ids: tuple[str, ...] = (),
     ) -> None:
         if max_iterations <= 0:
             raise ValueError("max_iterations must be positive")
@@ -64,6 +66,7 @@ class IntelligencePlanningLoop:
         self._intelligence = intelligence
         self._runtime_bridge = runtime_bridge
         self._max_iterations = max_iterations
+        self._engineering_tool_ids = frozenset(engineering_tool_ids)
 
     def run(
         self,
@@ -176,8 +179,8 @@ class IntelligencePlanningLoop:
             stop_reason="MAX_ITERATIONS",
         )
 
-    @staticmethod
     def _request_after_tool(
+        self,
         request: IntelligenceRequest,
         proposal: IntelligenceToolProposal,
         outcome: TaskOutcome,
@@ -191,6 +194,13 @@ class IntelligencePlanningLoop:
         if outcome.result is not None:
             payload["result"] = dict(outcome.result.result)
             payload["artifacts"] = list(outcome.result.artifacts)
+
+            if proposal.tool in self._engineering_tool_ids:
+                engineering_handoff = EngineeringHandoff.from_tool_result(
+                    outcome.result,
+                    operation=proposal.operation,
+                )
+                payload["engineering_handoff"] = engineering_handoff.to_dict()
             payload["validation"] = {
                 "state": outcome.result.validation_state,
                 "checks": [

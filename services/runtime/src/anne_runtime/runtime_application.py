@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -300,10 +300,17 @@ class RuntimeApplication:
             self._authority_resolver,
         )
 
+        engineering_tool_ids = tuple(
+            str(entry["tool_id"])
+            for entry in self._capability_catalog.snapshot()
+            if entry.get("engineering_domain") is not None
+        )
+
         self._planning_loop = IntelligencePlanningLoop(
             self._intelligence,
             self._runtime_bridge,
             max_iterations=8,
+            engineering_tool_ids=engineering_tool_ids,
         )
 
     def _register_unit_conversion_tool(self) -> None:
