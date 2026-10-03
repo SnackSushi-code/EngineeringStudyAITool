@@ -214,6 +214,16 @@ class RuntimeApplication:
                 ),
                 PolicyRule(
                     permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/fluid_mechanics",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
+                    target_pattern="anne/runtime/thermodynamics",
+                    decision=PermissionDecision.ALLOW,
+                ),
+                PolicyRule(
+                    permission_class=PermissionClass.READ,
                     target_pattern="anne/runtime/calculator",
                     decision=PermissionDecision.ALLOW,
                 ),

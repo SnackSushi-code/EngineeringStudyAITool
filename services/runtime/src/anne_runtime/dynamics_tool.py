@@ -159,10 +159,10 @@ def dynamics(operation: str, **kwargs: Any) -> dict[str, Any]:
     }
 
 
-def dynamics_handler(arguments: dict[str, Any], cancellation_token: Any) -> float:
+def dynamics_handler(context: Any, arguments: dict[str, Any]) -> dict[str, Any]:
     """Runtime tool handler for deterministic dynamics calculations."""
 
-    if cancellation_token.is_cancelled():
+    if context.is_cancelled():
         raise DynamicsError("Operation cancelled.")
 
     operation = arguments.get("operation")
@@ -174,7 +174,7 @@ def dynamics_handler(arguments: dict[str, Any], cancellation_token: Any) -> floa
 
     result = dynamics(operation, **calculation_arguments)
 
-    if cancellation_token.is_cancelled():
+    if context.is_cancelled():
         raise DynamicsError("Operation cancelled.")
 
     return result
