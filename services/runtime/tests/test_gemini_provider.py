@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from types import SimpleNamespace
@@ -345,6 +345,42 @@ def test_provider_rejects_non_object_tool_arguments():
     ):
         provider.generate(request)
 
+
+
+def test_provider_includes_engineering_candidates_in_runtime_context():
+    provider = GeminiModelProvider(
+        api_key="test-key",
+        model=MODEL,
+        client=FakeClient(response=make_response()),
+    )
+
+    request = make_request()
+    request = ModelRequest(
+        request_id=request.request_id,
+        task_id=request.task_id,
+        messages=request.messages,
+        model=request.model,
+        generation=request.generation,
+        metadata={
+            "anne.engineering_candidates": (
+                '[{"tool_id":"anne.thermodynamics",'
+                '"engineering_domain":"thermodynamics",'
+                '"description":"Thermodynamics calculations"}]'
+            )
+        },
+    )
+
+    provider.generate(request)
+
+    call = provider._client.models.calls[0]
+    contents = call["contents"]
+
+    user_text = contents[0]["parts"][0]["text"]
+
+    assert "Ann-E engineering capability candidates:" in user_text
+    assert "anne.thermodynamics" in user_text
+    assert "thermodynamics" in user_text
+    assert "Thermodynamics calculations" in user_text
 
 
 def test_provider_uses_default_timeout():

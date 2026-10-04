@@ -169,6 +169,61 @@ class EngineeringCapabilityRouter:
             )
         )
 
+    def as_model_metadata(self) -> str:
+        """Serialize ranked engineering candidates for the model boundary.
+
+        This output intentionally contains routing information only.
+        It never exposes permissions, timeout, retry, idempotency, policy,
+        or other execution-authority information.
+        """
+        capabilities = sorted(
+            {
+                capability
+                for entry in self._catalog
+                for capability in self._string_tuple(
+                    entry.get("capabilities")
+                )
+                if capability.startswith("engineering.")
+            }
+        )
+
+        payload: dict[str, list[dict[str, object]]] = {}
+
+        for capability in capabilities:
+            candidates = self.route(
+                EngineeringCapabilityRequest(
+                    capability=capability,
+                )
+            )
+
+            payload[capability] = [
+                {
+                    "tool_id": candidate.tool_id,
+                    "version": candidate.version,
+                    "description": candidate.description,
+                    "engineering_domain": candidate.engineering_domain,
+                    "execution_type": candidate.execution_type,
+                    "required_software": list(candidate.required_software),
+                    "input_artifact_types": list(
+                        candidate.input_artifact_types
+                    ),
+                    "output_artifact_types": list(
+                        candidate.output_artifact_types
+                    ),
+                    "score": candidate.score,
+                    "match_reasons": list(candidate.match_reasons),
+                }
+                for candidate in candidates
+            ]
+
+        import json
+
+        return json.dumps(
+            payload,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
     @staticmethod
     def _string_tuple(value: object) -> tuple[str, ...]:
         if value is None:

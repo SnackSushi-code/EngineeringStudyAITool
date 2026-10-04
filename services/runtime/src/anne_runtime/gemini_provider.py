@@ -453,6 +453,16 @@ Rules:
                 f"{tool_catalog}"
             )
 
+        engineering_candidates = request.metadata.get(
+            "anne.engineering_candidates"
+        )
+        if engineering_candidates:
+            runtime_context += (
+                "\n\n"
+                "Ann-E engineering capability candidates:\n"
+                f"{engineering_candidates}"
+            )
+
         for message in request.messages:
             role = message.role.value
 
