@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import math
 from typing import Any, Mapping
@@ -71,6 +71,20 @@ def _validate_result(value: float) -> float:
     return value
 
 
+DEFAULT_UNIVERSAL_GAS_CONSTANT = 8.314462618
+
+
+def _gas_constant(arguments: Mapping[str, Any]) -> float:
+    """Return the supplied gas constant or the standard universal value."""
+    if "gas_constant" not in arguments:
+        return DEFAULT_UNIVERSAL_GAS_CONSTANT
+
+    return _require_number(
+        arguments,
+        "gas_constant",
+        positive=True,
+    )
+
 def thermodynamics(
     operation: str,
     **arguments: Any,
@@ -88,11 +102,7 @@ def thermodynamics(
             "moles",
             non_negative=True,
         )
-        gas_constant = _require_number(
-            arguments,
-            "gas_constant",
-            positive=True,
-        )
+        gas_constant = _gas_constant(arguments)
         temperature = _require_number(
             arguments,
             "temperature",
@@ -119,11 +129,7 @@ def thermodynamics(
             "moles",
             non_negative=True,
         )
-        gas_constant = _require_number(
-            arguments,
-            "gas_constant",
-            positive=True,
-        )
+        gas_constant = _gas_constant(arguments)
         temperature = _require_number(
             arguments,
             "temperature",
@@ -160,11 +166,7 @@ def thermodynamics(
             "moles",
             non_negative=True,
         )
-        gas_constant = _require_number(
-            arguments,
-            "gas_constant",
-            positive=True,
-        )
+        gas_constant = _gas_constant(arguments)
 
         if moles == 0:
             raise ThermodynamicsError(
@@ -196,11 +198,7 @@ def thermodynamics(
             "volume",
             positive=True,
         )
-        gas_constant = _require_number(
-            arguments,
-            "gas_constant",
-            positive=True,
-        )
+        gas_constant = _gas_constant(arguments)
         temperature = _require_number(
             arguments,
             "temperature",
@@ -227,11 +225,7 @@ def thermodynamics(
             "molar_mass",
             positive=True,
         )
-        gas_constant = _require_number(
-            arguments,
-            "gas_constant",
-            positive=True,
-        )
+        gas_constant = _gas_constant(arguments)
         temperature = _require_number(
             arguments,
             "temperature",

@@ -1240,3 +1240,86 @@ def test_runtime_application_registers_kinematics_with_engineering_metadata():
     assert descriptor.required_software == ()
     assert descriptor.input_artifact_types == ("motion_specification",)
     assert descriptor.output_artifact_types == ("calculation_result",)
+
+
+def test_runtime_application_executes_thermodynamics_tool_production_path(
+    monkeypatch,
+):
+    request_id = "00000000-0000-0000-0000-000000000011"
+    task_id = "00000000-0000-0000-0000-000000000012"
+
+    def thermodynamics_responder(model_request):
+        if len(model_request.messages) == 1:
+            return json.dumps(
+                {
+                    "contract_version": "1.0",
+                    "decision_type": "TOOL_PROPOSAL",
+                    "response_text": None,
+                    "tool_call": {
+                        "request_id": request_id,
+                        "task_id": task_id,
+                        "tool": "anne.thermodynamics",
+                        "operation": "run",
+                        "arguments": {
+                            "operation": "ideal_gas_pressure",
+                            "moles": 1.0,
+                            "temperature": 300.0,
+                            "volume": 0.0249434,
+                        },
+                    },
+                }
+            )
+
+        assert len(model_request.messages) == 3
+
+        tool_message = model_request.messages[-1]
+
+        assert tool_message.role.value == "tool"
+        assert tool_message.name == "anne.thermodynamics"
+        assert '"operation": "ideal_gas_pressure"' in tool_message.content
+
+        tool_payload = json.loads(tool_message.content)
+        pressure = tool_payload["engineering_handoff"]["values"]["pressure"]
+        assert pressure == pytest.approx(100000.0, rel=1e-5)
+
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": (
+                    "The ideal-gas pressure is approximately 100,000 Pa."
+                ),
+                "tool_call": None,
+            }
+        )
+
+    monkeypatch.setattr(
+        RuntimeApplication,
+        "_deterministic_responder",
+        staticmethod(thermodynamics_responder),
+    )
+
+    application = RuntimeApplication(
+        repository_root=Path(__file__).resolve().parents[3]
+    )
+
+    result = application.handle_message(
+        request_id=request_id,
+        task_id=task_id,
+        payload={
+            "user_intent": (
+                "Calculate the pressure of 1 mol of gas at "
+                "300 K in a volume of 0.0249434 m^3."
+            ),
+            "conversation": [],
+        },
+    )
+
+    assert result["iterations"] == 2
+    assert result["stop_reason"] == "FINAL_RESPONSE"
+    assert result["provider_id"] == "deterministic"
+    assert result["provider_version"] == "1.0.0"
+    assert result["model"] == "deterministic-v1"
+    assert result["response_text"] == (
+        "The ideal-gas pressure is approximately 100,000 Pa."
+    )
