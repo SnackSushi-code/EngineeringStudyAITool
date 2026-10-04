@@ -77,14 +77,16 @@ class ToolAuthorityResolver:
         except KeyError as exc:
             raise ToolAuthorityError(f"Unknown tool: {proposal.tool}") from exc
         try:
-            d.arguments.validate(proposal.arguments)
+            canonical_arguments = dict(proposal.arguments)
+
+            d.arguments.validate(canonical_arguments)
             call = ToolCall(
                 schema_version="1.0",
                 request_id=proposal.request_id,
                 task_id=proposal.task_id,
                 tool=d.tool_id,
                 operation=proposal.operation,
-                arguments=dict(proposal.arguments),
+                arguments=canonical_arguments,
                 permissions=tuple(d.required_permissions),
                 timeout_ms=d.max_timeout_ms,
                 retry_mode=d.retry_mode,
