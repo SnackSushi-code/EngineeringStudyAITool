@@ -1,21 +1,41 @@
 import {
   FormEvent,
+  KeyboardEvent,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 
-type Message = {
-  id: number;
-  role: "assistant" | "user";
+type MessageRole = "assistant" | "user";
+
+type MessageStatus =
+  | "pending"
+  | "sent"
+  | "processing"
+  | "completed"
+  | "error";
+
+type ConversationMessage = {
+  id: string;
+  role: MessageRole;
   content: string;
+  timestamp: string;
+  status: MessageStatus;
+  requestId: string | null;
+  taskId: string | null;
+  error: string | null;
 };
 
 type RuntimeHealth = {
   connected: boolean;
   runtimeVersion: string | null;
   message: string;
+};
+
+type RuntimeSession = {
+  sessionId: string;
 };
 
 type RuntimeMessage = {
@@ -27,12 +47,45 @@ type RuntimeMessage = {
   model: string;
 };
 
-const initialMessages: Message[] = [
+const createMessageId = (): string => {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+
+  return `message-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+};
+
+const createConversationMessage = (
+  role: MessageRole,
+  content: string,
+  status: MessageStatus = "completed",
+): ConversationMessage => ({
+  id: createMessageId(),
+  role,
+  content,
+  timestamp: new Date().toISOString(),
+  status,
+  requestId: null,
+  taskId: null,
+  error: null,
+});
+
+const initialMessages: ConversationMessage[] = [
   {
-    id: 1,
+    id: "initial-assistant-message",
     role: "assistant",
     content:
       "Hello, Nick. I'm Ann-E. My desktop shell is online and I'm connecting this conversation to the Phase 1 intelligence runtime.",
+    timestamp: new Date().toISOString(),
+    status: "completed",
+    requestId: null,
+    taskId: null,
+    error: null,
   },
 ];
 
@@ -40,33 +93,68 @@ const quickActions = [
   {
     label: "Study",
     description: "Open study tools",
-    icon: "▣",
+    icon: "S",
   },
   {
     label: "Engineering",
     description: "Engineering workspace",
-    icon: "⌬",
+    icon: "E",
   },
   {
     label: "Research",
     description: "Research workspace",
-    icon: "⌕",
+    icon: "R",
   },
   {
     label: "Projects",
     description: "Project workspace",
-    icon: "◇",
+    icon: "P",
   },
 ];
 
+const formatMessageTime = (
+  timestamp: string,
+): string => {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const getSessionState = (
+  isSending: boolean,
+  runtimeConnected: boolean,
+): string => {
+  if (isSending) {
+    return "Thinking";
+  }
+
+  if (runtimeConnected) {
+    return "Runtime Connected";
+  }
+
+  return "Shell Ready";
+};
+
 function App() {
   const [messages, setMessages] =
-    useState<Message[]>(initialMessages);
+    useState<ConversationMessage[]>(
+      initialMessages,
+    );
 
   const [input, setInput] = useState("");
 
   const [runtimeConnected, setRuntimeConnected] =
     useState(false);
+
+  const [sessionId, setSessionId] =
+    useState<string | null>(null);
 
   const [runtimeVersion, setRuntimeVersion] =
     useState<string | null>(null);
@@ -74,10 +162,54 @@ function App() {
   const [isSending, setIsSending] =
     useState(false);
 
+  const inputRef =
+    useRef<HTMLInputElement | null>(null);
+
+  const messagesEndRef =
+    useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
-    void refreshRuntimeHealth();
+    void initializeRuntimeSession();
   }, []);
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
+  }, [messages, isSending]);
+
+  useEffect(() => {
+    if (!isSending) {
+      inputRef.current?.focus();
+    }
+  }, [isSending]);
+
+  const initializeRuntimeSession = async () => {
+    try {
+      const health = await invoke<RuntimeHealth>(
+        "runtime_health",
+      );
+
+      setRuntimeConnected(health.connected);
+      setRuntimeVersion(health.runtimeVersion);
+
+      if (!health.connected) {
+        setSessionId(null);
+        return;
+      }
+
+      const session = await invoke<RuntimeSession>(
+        "runtime_create_session",
+      );
+
+      setSessionId(session.sessionId);
+    } catch {
+      setRuntimeConnected(false);
+      setRuntimeVersion(null);
+      setSessionId(null);
+    }
+  };
   const refreshRuntimeHealth = async () => {
     try {
       const health = await invoke<RuntimeHealth>(
@@ -101,18 +233,43 @@ function App() {
       return;
     }
 
-    const conversation = messages.map(
-      (currentMessage) => ({
-        role: currentMessage.role,
-        content: currentMessage.content,
-      }),
-    );
+    const submittedMessage = trimmedMessage;
 
-    const userMessage: Message = {
-      id: Date.now(),
-      role: "user",
-      content: trimmedMessage,
-    };
+    if (!sessionId) {
+      try {
+        const session = await invoke<RuntimeSession>(
+          "runtime_create_session",
+        );
+
+        setSessionId(session.sessionId);
+      } catch (error) {
+        const errorText = String(error);
+
+        const errorMessage =
+          createConversationMessage(
+            "assistant",
+            "I could not create a runtime conversation session.",
+            "error",
+          );
+
+        errorMessage.error = errorText;
+
+        setMessages((currentMessages) => [
+          ...currentMessages,
+          errorMessage,
+        ]);
+
+        await refreshRuntimeHealth();
+        return;
+      }
+    }
+
+    const userMessage =
+      createConversationMessage(
+        "user",
+        submittedMessage,
+        "sent",
+      );
 
     setMessages((currentMessages) => [
       ...currentMessages,
@@ -127,16 +284,17 @@ function App() {
         await invoke<RuntimeMessage>(
           "runtime_message",
           {
-            userIntent: trimmedMessage,
-            conversation,
+            userIntent: submittedMessage,
+            sessionId: sessionId ?? "",
           },
         );
 
-      const assistantMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content: result.responseText,
-      };
+      const assistantMessage =
+        createConversationMessage(
+          "assistant",
+          result.responseText,
+          "completed",
+        );
 
       setMessages((currentMessages) => [
         ...currentMessages,
@@ -145,18 +303,23 @@ function App() {
 
       setRuntimeConnected(true);
     } catch (error) {
-      const errorMessage: Message = {
-        id: Date.now() + 1,
-        role: "assistant",
-        content:
-          "I could not complete the runtime request.\n\n" +
-          String(error),
-      };
+      const errorText = String(error);
+
+      const errorMessage =
+        createConversationMessage(
+          "assistant",
+          "I could not complete the runtime request.",
+          "error",
+        );
+
+      errorMessage.error = errorText;
 
       setMessages((currentMessages) => [
         ...currentMessages,
         errorMessage,
       ]);
+
+      setInput(submittedMessage);
 
       await refreshRuntimeHealth();
     } finally {
@@ -170,6 +333,20 @@ function App() {
     event.preventDefault();
 
     void submitMessage(input);
+  };
+
+  const handleInputKeyDown = (
+    event: KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (!isSending && input.trim()) {
+      void submitMessage(input);
+    }
   };
 
   const handleQuickAction = (
@@ -205,15 +382,14 @@ function App() {
           </div>
         </div>
 
-        <div className="topbar-status">
-          <span
-            className="status-dot"
-            style={{
-              opacity: runtimeConnected
-                ? 1
-                : 0.35,
-            }}
-          />
+        <div
+          className={`topbar-status ${
+            runtimeConnected
+              ? "status-connected"
+              : "status-disconnected"
+          }`}
+        >
+          <span className="status-dot" />
 
           <span>
             {runtimeConnected
@@ -230,14 +406,14 @@ function App() {
             type="button"
             aria-label="Notifications"
           >
-            ◇
+            N
           </button>
 
           <button
             type="button"
             aria-label="Settings"
           >
-            ⚙
+            S
           </button>
         </div>
       </header>
@@ -254,8 +430,9 @@ function App() {
               type="button"
             >
               <span className="nav-icon">
-                ◈
+                A
               </span>
+
               <span>Assistant</span>
             </button>
 
@@ -264,8 +441,9 @@ function App() {
               type="button"
             >
               <span className="nav-icon">
-                ▣
+                S
               </span>
+
               <span>Study</span>
             </button>
 
@@ -274,8 +452,9 @@ function App() {
               type="button"
             >
               <span className="nav-icon">
-                ⌬
+                E
               </span>
+
               <span>Engineering</span>
             </button>
 
@@ -284,8 +463,9 @@ function App() {
               type="button"
             >
               <span className="nav-icon">
-                ⌕
+                R
               </span>
+
               <span>Research</span>
             </button>
 
@@ -294,8 +474,9 @@ function App() {
               type="button"
             >
               <span className="nav-icon">
-                ◇
+                P
               </span>
+
               <span>Projects</span>
             </button>
           </div>
@@ -310,8 +491,9 @@ function App() {
               type="button"
             >
               <span className="nav-icon">
-                ◌
+                R
               </span>
+
               <span>Runtime</span>
             </button>
 
@@ -320,8 +502,9 @@ function App() {
               type="button"
             >
               <span className="nav-icon">
-                ⬡
+                C
               </span>
+
               <span>Colony</span>
             </button>
 
@@ -330,8 +513,9 @@ function App() {
               type="button"
             >
               <span className="nav-icon">
-                ⚙
+                S
               </span>
+
               <span>Settings</span>
             </button>
           </div>
@@ -340,12 +524,11 @@ function App() {
             <div className="runtime-card">
               <div className="runtime-card-header">
                 <span
-                  className="runtime-indicator"
-                  style={{
-                    opacity: runtimeConnected
-                      ? 1
-                      : 0.35,
-                  }}
+                  className={`runtime-indicator ${
+                    runtimeConnected
+                      ? "indicator-connected"
+                      : "indicator-disconnected"
+                  }`}
                 />
 
                 <span>Runtime</span>
@@ -389,9 +572,8 @@ function App() {
               </div>
 
               <h1>
-                Your engineering
+                Your engineering{" "}
                 <span>
-                  {" "}
                   intelligence layer.
                 </span>
               </h1>
@@ -416,22 +598,38 @@ function App() {
               </div>
 
               <span className="session-state">
-                <span />
-                {isSending
-                  ? "Thinking"
-                  : runtimeConnected
-                    ? "Runtime Connected"
-                    : "Shell Ready"}
+                <span
+                  className={
+                    isSending
+                      ? "session-dot thinking"
+                      : runtimeConnected
+                        ? "session-dot connected"
+                        : "session-dot offline"
+                  }
+                />
+
+                {getSessionState(
+                  isSending,
+                  runtimeConnected,
+                )}
               </span>
             </div>
 
-            <div className="messages">
+            <div
+              className="messages"
+              aria-live="polite"
+              aria-label="Conversation"
+            >
               {messages.map((message) => (
                 <article
                   className={`message ${
                     message.role === "user"
                       ? "message-user"
                       : "message-assistant"
+                  } ${
+                    message.status === "error"
+                      ? "message-error"
+                      : ""
                   }`}
                   key={message.id}
                 >
@@ -442,15 +640,38 @@ function App() {
                   </div>
 
                   <div className="message-content">
-                    <div className="message-role">
-                      {message.role === "user"
-                        ? "You"
-                        : "Ann-E"}
+                    <div className="message-meta">
+                      <span className="message-role">
+                        {message.role === "user"
+                          ? "You"
+                          : "Ann-E"}
+                      </span>
+
+                      <time
+                        dateTime={
+                          message.timestamp
+                        }
+                      >
+                        {formatMessageTime(
+                          message.timestamp,
+                        )}
+                      </time>
                     </div>
 
-                    <p>
-                      {message.content}
-                    </p>
+                    <p>{message.content}</p>
+
+                    {message.error && (
+                      <div className="message-error-detail">
+                        {message.error}
+                      </div>
+                    )}
+
+                    {message.status ===
+                      "error" && (
+                      <div className="message-status">
+                        Runtime request failed
+                      </div>
+                    )}
                   </div>
                 </article>
               ))}
@@ -462,36 +683,56 @@ function App() {
                   </div>
 
                   <div className="message-content">
-                    <div className="message-role">
-                      Ann-E
+                    <div className="message-meta">
+                      <span className="message-role">
+                        Ann-E
+                      </span>
+
+                      <span className="message-processing">
+                        Processing
+                      </span>
                     </div>
 
-                    <p>
+                    <p className="thinking-text">
                       Routing your request
                       through the intelligence
-                      runtime…
+                      runtime
+                      <span className="thinking-dots">
+                        ...
+                      </span>
                     </p>
                   </div>
                 </article>
               )}
+
+              <div
+                ref={messagesEndRef}
+                aria-hidden="true"
+              />
             </div>
 
             <form
               className="composer"
               onSubmit={handleSubmit}
             >
-              <div className="composer-icon">
-                ✦
+              <div
+                className="composer-icon"
+                aria-hidden="true"
+              >
+                +
               </div>
 
               <input
+                ref={inputRef}
                 value={input}
                 onChange={(event) =>
                   setInput(event.target.value)
                 }
+                onKeyDown={handleInputKeyDown}
                 placeholder="Ask Ann-E anything..."
                 aria-label="Message Ann-E"
                 disabled={isSending}
+                autoComplete="off"
               />
 
               <button
@@ -554,7 +795,10 @@ function App() {
                     </small>
                   </span>
 
-                  <span className="quick-arrow">
+                  <span
+                    className="quick-arrow"
+                    aria-hidden="true"
+                  >
                     →
                   </span>
                 </button>

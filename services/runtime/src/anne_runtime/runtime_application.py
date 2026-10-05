@@ -725,6 +725,32 @@ class RuntimeApplication:
         """Return the runtime-owned workspace identity."""
         return self._workspace_id
 
+    def create_session(self) -> str:
+        """Create a runtime-owned conversation session."""
+        return str(self._conversation_sessions.create_session())
+
+    def clear_session(self, session_id: str) -> None:
+        """Clear conversation state while preserving the session."""
+        parsed_session_id = self._parse_session_id(session_id)
+        if parsed_session_id is None:
+            raise RuntimeApplicationError("session_id must be a valid UUID.")
+
+        try:
+            self._conversation_sessions.clear_session(parsed_session_id)
+        except ConversationSessionError as exc:
+            raise RuntimeApplicationError(str(exc)) from exc
+
+    def delete_session(self, session_id: str) -> None:
+        """Delete a runtime-owned conversation session."""
+        parsed_session_id = self._parse_session_id(session_id)
+        if parsed_session_id is None:
+            raise RuntimeApplicationError("session_id must be a valid UUID.")
+
+        try:
+            self._conversation_sessions.delete_session(parsed_session_id)
+        except ConversationSessionError as exc:
+            raise RuntimeApplicationError(str(exc)) from exc
+
     def handle_message(
         self,
         *,

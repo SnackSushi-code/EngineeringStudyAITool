@@ -14,7 +14,14 @@ pub struct RuntimeHealth {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RuntimeSession {
+    pub session_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RuntimeMessage {
+
     pub response_text: String,
     pub stop_reason: String,
     pub iterations: u64,
@@ -34,11 +41,83 @@ pub fn runtime_health(runtime: State<'_, RuntimeManager>) -> Result<RuntimeHealt
     parse_health_response(response).map_err(|error| error.to_string())
 }
 
+
+#[tauri::command]
+pub fn runtime_create_session(
+    runtime: State<'_, RuntimeManager>,
+) -> Result<RuntimeSession, String> {
+    ensure_runtime_started(&runtime).map_err(|error| error.to_string())?;
+
+    let response = runtime
+        .send_request("create_session", json!({}))
+        .map_err(|error| error.to_string())?;
+
+    let payload = response
+        .get("payload")
+        .ok_or_else(|| "Runtime create-session response is missing payload.".to_string())?;
+
+    let session_id = payload
+        .get("session_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            "Runtime create-session response is missing a valid session_id.".to_string()
+        })?;
+
+    Ok(RuntimeSession {
+        session_id: session_id.to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn runtime_clear_session(
+    runtime: State<'_, RuntimeManager>,
+    session_id: String,
+) -> Result<(), String> {
+    ensure_runtime_started(&runtime).map_err(|error| error.to_string())?;
+
+    if session_id.trim().is_empty() {
+        return Err("Session ID cannot be blank.".to_string());
+    }
+
+    runtime
+        .send_request(
+            "clear_session",
+            json!({
+                "session_id": session_id,
+            }),
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn runtime_delete_session(
+    runtime: State<'_, RuntimeManager>,
+    session_id: String,
+) -> Result<(), String> {
+    ensure_runtime_started(&runtime).map_err(|error| error.to_string())?;
+
+    if session_id.trim().is_empty() {
+        return Err("Session ID cannot be blank.".to_string());
+    }
+
+    runtime
+        .send_request(
+            "delete_session",
+            json!({
+                "session_id": session_id,
+            }),
+        )
+        .map_err(|error| error.to_string())?;
+
+    Ok(())
+}
 #[tauri::command]
 pub fn runtime_message(
     runtime: State<'_, RuntimeManager>,
+    session_id: String,
     user_intent: String,
-    conversation: Vec<Value>,
 ) -> Result<RuntimeMessage, String> {
     ensure_runtime_started(&runtime).map_err(|error| error.to_string())?;
 
@@ -51,7 +130,7 @@ pub fn runtime_message(
             "message",
             json!({
                 "user_intent": user_intent,
-                "conversation": conversation,
+                "session_id": session_id,
             }),
         )
         .map_err(|error| error.to_string())?;

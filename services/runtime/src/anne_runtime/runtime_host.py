@@ -186,6 +186,71 @@ def _dispatch(
             },
         )
 
+    if request.operation == "create_session":
+        if application is None:
+            raise RuntimeApplicationError(
+                "The runtime application is required for the 'create_session' operation."
+            )
+
+        session_id = application.create_session()
+
+        return RuntimeResponse(
+            request_id=request.request_id,
+            task_id=request.task_id,
+            status="completed",
+            payload={
+                "session_id": session_id,
+            },
+        )
+
+    if request.operation == "clear_session":
+        if application is None:
+            raise RuntimeApplicationError(
+                "The runtime application is required for the 'clear_session' operation."
+            )
+
+        session_id = request.payload.get("session_id")
+        if not isinstance(session_id, str):
+            raise RuntimeApplicationError(
+                "The 'clear_session' operation requires a string session_id."
+            )
+
+        application.clear_session(session_id)
+
+        return RuntimeResponse(
+            request_id=request.request_id,
+            task_id=request.task_id,
+            status="completed",
+            payload={
+                "cleared": True,
+                "session_id": session_id,
+            },
+        )
+
+    if request.operation == "delete_session":
+        if application is None:
+            raise RuntimeApplicationError(
+                "The runtime application is required for the 'delete_session' operation."
+            )
+
+        session_id = request.payload.get("session_id")
+        if not isinstance(session_id, str):
+            raise RuntimeApplicationError(
+                "The 'delete_session' operation requires a string session_id."
+            )
+
+        application.delete_session(session_id)
+
+        return RuntimeResponse(
+            request_id=request.request_id,
+            task_id=request.task_id,
+            status="completed",
+            payload={
+                "deleted": True,
+                "session_id": session_id,
+            },
+        )
+
     if request.operation == "message":
         if application is None:
             raise RuntimeApplicationError(
