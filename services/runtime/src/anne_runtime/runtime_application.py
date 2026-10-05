@@ -18,6 +18,8 @@ from .contracts import (
 from .deterministic_provider import DeterministicModelProvider
 from .execution import ExecutionCoordinator
 from .gemini_provider import GeminiModelProvider
+from .conversation_session import ConversationSessionError
+from .conversation_session_manager import ConversationSessionManager
 from .intelligence_contracts import IntelligenceRequest
 from .engineering_capability_router import EngineeringCapabilityRouter
 from .intelligence_orchestrator import IntelligenceOrchestrator
@@ -114,6 +116,8 @@ class RuntimeApplication:
         self._repository_root = repository_root.resolve()
 
         self._workspace_id = uuid4()
+
+        self._conversation_sessions = ConversationSessionManager()
 
         self._schema_dir = (
             self._repository_root
@@ -745,9 +749,28 @@ class RuntimeApplication:
 
         user_intent = self._parse_user_intent(payload)
 
-        conversation = self._parse_conversation(
-            payload.get("conversation"),
+        session_id = self._parse_session_id(
+            payload.get("session_id"),
         )
+
+        if session_id is not None:
+            try:
+                self._conversation_sessions.append_message(
+                    session_id,
+                    {
+                        "role": "user",
+                        "content": user_intent,
+                    },
+                )
+                conversation = self._conversation_sessions.get_conversation(
+                    session_id,
+                )
+            except ConversationSessionError as exc:
+                raise RuntimeApplicationError(str(exc)) from exc
+        else:
+            conversation = self._parse_conversation(
+                payload.get("conversation"),
+            )
 
         intelligence_request = IntelligenceRequest(
             request_id=request_uuid,
@@ -787,6 +810,18 @@ class RuntimeApplication:
             )
 
         last_iteration = outcome.iterations[-1]
+
+        if session_id is not None:
+            try:
+                self._conversation_sessions.append_message(
+                    session_id,
+                    {
+                        "role": "assistant",
+                        "content": outcome.final_response,
+                    },
+                )
+            except ConversationSessionError as exc:
+                raise RuntimeApplicationError(str(exc)) from exc
 
         return {
             "response_text": outcome.final_response,
@@ -944,6 +979,26 @@ class RuntimeApplication:
             )
 
         return value
+
+    @staticmethod
+    def _parse_session_id(
+        raw_session_id: Any,
+    ) -> UUID | None:
+        """Parse an optional runtime-owned conversation session ID."""
+        if raw_session_id is None:
+            return None
+
+        if not isinstance(raw_session_id, str) or not raw_session_id.strip():
+            raise RuntimeApplicationError(
+                "message payload session_id must be a non-empty UUID string."
+            )
+
+        try:
+            return UUID(raw_session_id.strip())
+        except ValueError as exc:
+            raise RuntimeApplicationError(
+                "message payload session_id must be a valid UUID."
+            ) from exc
 
     @staticmethod
     def _parse_conversation(

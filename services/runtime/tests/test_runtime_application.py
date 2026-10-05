@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -717,8 +718,9 @@ def test_message_executes_statistics_through_production_path(
         "The mean of the dataset [1, 2, 3, 4] is 2.5."
     )
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 import json
+from types import SimpleNamespace
 
 
 def test_message_executes_interpolation_through_production_path(
@@ -1322,4 +1324,277 @@ def test_runtime_application_executes_thermodynamics_tool_production_path(
     assert result["model"] == "deterministic-v1"
     assert result["response_text"] == (
         "The ideal-gas pressure is approximately 100,000 Pa."
+    )
+
+def test_session_clear_removes_conversation_but_keeps_session(
+    tmp_path,
+) -> None:
+    schema_dir = tmp_path / "packages" / "schemas"
+    schema_dir.mkdir(parents=True)
+
+    application = RuntimeApplication(
+        repository_root=tmp_path,
+    )
+
+    session_id = application._conversation_sessions.create_session()
+
+    application._conversation_sessions.append_message(
+        session_id,
+        {
+            "role": "user",
+            "content": "First message",
+        },
+    )
+
+    assert len(
+        application._conversation_sessions.get_conversation(session_id)
+    ) == 1
+
+    application._conversation_sessions.clear_session(session_id)
+
+    assert application._conversation_sessions.get_conversation(
+        session_id
+    ) == ()
+
+    application._conversation_sessions.append_message(
+        session_id,
+        {
+            "role": "user",
+            "content": "Message after clear",
+        },
+    )
+
+    conversation = application._conversation_sessions.get_conversation(
+        session_id
+    )
+
+    assert len(conversation) == 1
+    assert conversation[0]["role"] == "user"
+    assert conversation[0]["content"] == "Message after clear"
+
+
+def test_session_unknown_id_is_rejected(
+    tmp_path,
+) -> None:
+    schema_dir = tmp_path / "packages" / "schemas"
+    schema_dir.mkdir(parents=True)
+
+    application = RuntimeApplication(
+        repository_root=tmp_path,
+    )
+
+    unknown_session_id = uuid4()
+
+    with pytest.raises(RuntimeApplicationError, match="session"):
+        application.handle_message(
+            request_id=str(uuid4()),
+            task_id=str(uuid4()),
+            payload={
+                "user_intent": "Hello",
+                "session_id": str(unknown_session_id),
+            },
+        )
+
+
+def test_session_malformed_id_is_rejected(
+    tmp_path,
+) -> None:
+    schema_dir = tmp_path / "packages" / "schemas"
+    schema_dir.mkdir(parents=True)
+
+    application = RuntimeApplication(
+        repository_root=tmp_path,
+    )
+
+    with pytest.raises(RuntimeApplicationError, match="session_id"):
+        application.handle_message(
+            request_id=str(uuid4()),
+            task_id=str(uuid4()),
+            payload={
+                "user_intent": "Hello",
+                "session_id": "not-a-valid-uuid",
+            },
+        )
+
+
+def test_explicit_conversation_remains_compatible_without_session(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    schema_dir = tmp_path / "packages" / "schemas"
+    schema_dir.mkdir(parents=True)
+
+    application = RuntimeApplication(
+        repository_root=tmp_path,
+    )
+
+    captured_requests = []
+
+    def fake_run(intelligence_request, task_request):
+        captured_requests.append(intelligence_request)
+
+        return SimpleNamespace(
+            final_response="explicit conversation response",
+            completed=True,
+            iterations=(
+                SimpleNamespace(
+                    invocation=SimpleNamespace(
+                        provider_id="test-provider",
+                        provider_version="1.0",
+                        model="test-model",
+                    ),
+                ),
+            ),
+            stop_reason="FINAL_RESPONSE",
+        )
+
+    monkeypatch.setattr(
+        application._planning_loop,
+        "run",
+        fake_run,
+    )
+
+    response = application.handle_message(
+        request_id=str(uuid4()),
+        task_id=str(uuid4()),
+        payload={
+            "user_intent": "Continue this discussion.",
+            "conversation": [
+                {
+                    "role": "user",
+                    "content": "Previous question",
+                },
+                {
+                    "role": "assistant",
+                    "content": "Previous answer",
+                },
+            ],
+        },
+    )
+
+    assert response["response_text"] == "explicit conversation response"
+
+    assert len(captured_requests) == 1
+
+    conversation = captured_requests[0].conversation
+
+    assert len(conversation) == 2
+    assert conversation[0]["role"] == "user"
+    assert conversation[0]["content"] == "Previous question"
+    assert conversation[1]["role"] == "assistant"
+    assert conversation[1]["content"] == "Previous answer"
+
+def test_message_session_preserves_conversation_across_requests(
+    tmp_path,
+    monkeypatch,
+):
+    request_ids = [
+        UUID("22222222-2222-2222-2222-222222222222"),
+        UUID("33333333-3333-3333-3333-333333333333"),
+    ]
+    task_ids = [
+        UUID("44444444-4444-4444-4444-444444444444"),
+        UUID("55555555-5555-5555-5555-555555555555"),
+    ]
+
+    captured_requests = []
+
+    def fake_run(intelligence_request, task_request):
+        captured_requests.append(intelligence_request)
+
+        return SimpleNamespace(
+            final_response=f"response-{len(captured_requests)}",
+            completed=True,
+            iterations=(
+                SimpleNamespace(
+                    invocation=SimpleNamespace(
+                        provider_id="test-provider",
+                        provider_version="1.0",
+                        model="test-model",
+                    ),
+                ),
+            ),
+            stop_reason="FINAL_RESPONSE",
+        )
+
+    schema_dir = tmp_path / "packages" / "schemas"
+    schema_dir.mkdir(parents=True)
+
+    application = RuntimeApplication(
+        repository_root=tmp_path,
+    )
+    session_id = application._conversation_sessions.create_session()
+
+    monkeypatch.setattr(
+        application._planning_loop,
+        "run",
+        fake_run,
+    )
+
+    first = application.handle_message(
+        request_id=str(request_ids[0]),
+        task_id=str(task_ids[0]),
+        payload={
+            "session_id": str(session_id),
+            "user_intent": "What is Newton's second law?",
+        },
+    )
+
+    second = application.handle_message(
+        request_id=str(request_ids[1]),
+        task_id=str(task_ids[1]),
+        payload={
+            "session_id": str(session_id),
+            "user_intent": "Now explain it using an example.",
+        },
+    )
+
+    assert first["response_text"] == "response-1"
+    assert second["response_text"] == "response-2"
+
+    assert len(captured_requests) == 2
+
+    assert captured_requests[0].conversation == (
+        {
+            "role": "user",
+            "content": "What is Newton's second law?",
+        },
+    )
+
+    assert captured_requests[1].conversation == (
+        {
+            "role": "user",
+            "content": "What is Newton's second law?",
+        },
+        {
+            "role": "assistant",
+            "content": "response-1",
+        },
+        {
+            "role": "user",
+            "content": "Now explain it using an example.",
+        },
+    )
+
+    conversation = application._conversation_sessions.get_conversation(
+        session_id,
+    )
+
+    assert conversation == (
+        {
+            "role": "user",
+            "content": "What is Newton's second law?",
+        },
+        {
+            "role": "assistant",
+            "content": "response-1",
+        },
+        {
+            "role": "user",
+            "content": "Now explain it using an example.",
+        },
+        {
+            "role": "assistant",
+            "content": "response-2",
+        },
     )
