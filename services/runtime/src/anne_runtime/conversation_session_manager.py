@@ -1,29 +1,22 @@
-﻿from __future__ import annotations
+"""Runtime-owned conversation session management."""
+
+from __future__ import annotations
 
 from threading import RLock
 from typing import Any, Mapping
 from uuid import UUID, uuid4
 
-from .conversation_session import (
-    ConversationSession,
-    ConversationSessionError,
-)
-
-
-MAX_SESSIONS = 128
-MAX_MESSAGES_PER_SESSION = 64
-MAX_MESSAGE_LENGTH = 16_000
-MAX_TOTAL_CONVERSATION_LENGTH = 64_000
+from .conversation_session import ConversationSession, ConversationSessionError
+from .conversation_session_persistence import ConversationSessionPersistence
 
 
 class ConversationSessionManager:
-    """
-    Runtime-owned in-memory conversation state.
+    """Manage runtime-owned conversation sessions."""
 
-    This component owns conversation history only. It has no access to
-    model providers, tool permissions, policy, authority resolution,
-    execution, or tool handlers.
-    """
+    MAX_SESSIONS = 128
+    MAX_MESSAGES_PER_SESSION = 64
+    MAX_MESSAGE_LENGTH = 16_000
+    MAX_TOTAL_CONVERSATION_LENGTH = 64_000
 
     def __init__(
         self,
@@ -31,9 +24,8 @@ class ConversationSessionManager:
         max_sessions: int = MAX_SESSIONS,
         max_messages_per_session: int = MAX_MESSAGES_PER_SESSION,
         max_message_length: int = MAX_MESSAGE_LENGTH,
-        max_total_conversation_length: int = (
-            MAX_TOTAL_CONVERSATION_LENGTH
-        ),
+        max_total_conversation_length: int = MAX_TOTAL_CONVERSATION_LENGTH,
+        persistence: ConversationSessionPersistence | None = None,
     ) -> None:
         if max_sessions <= 0:
             raise ValueError("max_sessions must be greater than zero")
@@ -53,50 +45,87 @@ class ConversationSessionManager:
                 "max_total_conversation_length must be greater than zero"
             )
 
+        self._sessions: dict[UUID, ConversationSession] = {}
+        self._lock = RLock()
+
         self._max_sessions = max_sessions
         self._max_messages_per_session = max_messages_per_session
         self._max_message_length = max_message_length
         self._max_total_conversation_length = (
             max_total_conversation_length
         )
-
-        self._sessions: dict[UUID, ConversationSession] = {}
-        self._lock = RLock()
+        self._persistence = persistence
 
     def create_session(self) -> UUID:
-        """Create and return a new runtime-owned session identity."""
+        """Create and return a new session identifier."""
         with self._lock:
             if len(self._sessions) >= self._max_sessions:
                 raise ConversationSessionError(
-                    "maximum number of conversation sessions reached"
+                    "conversation session limit reached: "
+                    f"{self._max_sessions} sessions"
                 )
 
             session_id = uuid4()
+            session = ConversationSession(session_id)
 
-            while session_id in self._sessions:
-                session_id = uuid4()
+            if self._persistence is not None:
+                try:
+                    self._persistence.save_session(
+                        session_id,
+                        session.snapshot(),
+                    )
+                except Exception as exc:
+                    raise ConversationSessionError(str(exc)) from exc
 
-            self._sessions[session_id] = ConversationSession(
-                session_id=session_id,
-            )
-
+            self._sessions[session_id] = session
             return session_id
 
     def get_session(self, session_id: UUID) -> ConversationSession:
-        """Return a session or raise when the session does not exist."""
+        """Return an active session or hydrate it from persistence."""
         with self._lock:
-            try:
-                return self._sessions[session_id]
-            except KeyError as exc:
-                raise ConversationSessionError(
-                    f"conversation session does not exist: {session_id}"
-                ) from exc
+            session = self._sessions.get(session_id)
+
+            if session is not None:
+                return session
+
+            if self._persistence is not None:
+                try:
+                    messages = self._persistence.load_session(session_id)
+                except Exception as exc:
+                    raise ConversationSessionError(str(exc)) from exc
+
+                if messages is not None:
+                    if len(self._sessions) >= self._max_sessions:
+                        raise ConversationSessionError(
+                            "conversation session limit reached: "
+                            f"{self._max_sessions} sessions"
+                        )
+
+                    session = ConversationSession(session_id)
+
+                    try:
+                        for message in messages:
+                            self._validate_and_append_loaded_message(
+                                session,
+                                message,
+                            )
+                    except ConversationSessionError:
+                        raise
+                    except Exception as exc:
+                        raise ConversationSessionError(str(exc)) from exc
+
+                    self._sessions[session_id] = session
+                    return session
+
+            raise ConversationSessionError(
+                f"conversation session does not exist: {session_id}"
+            )
 
     def get_conversation(
         self,
         session_id: UUID,
     ) -> tuple[Mapping[str, Any], ...]:
-        """Return a safe snapshot of session conversation history."""
+        """Return an immutable conversation snapshot."""
         with self._lock:
             session = self.get_session(session_id)
             return session.snapshot()
@@ -106,7 +135,116 @@ class ConversationSessionManager:
         session_id: UUID,
         message: Mapping[str, Any],
     ) -> None:
-        """Append one validated conversation message."""
+        """Append a validated message to a session."""
+        normalized = self._normalize_message(message)
+
+        with self._lock:
+            session = self.get_session(session_id)
+
+            if len(session.messages) >= self._max_messages_per_session:
+                raise ConversationSessionError(
+                    "conversation session reached the maximum number "
+                    f"of {self._max_messages_per_session} messages"
+                )
+
+            current_length = sum(
+                len(str(item.get("content", "")))
+                for item in session.messages
+            )
+
+            if (
+                current_length + len(normalized["content"])
+                > self._max_total_conversation_length
+            ):
+                raise ConversationSessionError(
+                    "conversation session exceeded the maximum total "
+                    "content length of "
+                    f"{self._max_total_conversation_length} characters"
+                )
+
+            session.messages.append(normalized)
+
+            if self._persistence is not None:
+                try:
+                    self._persistence.save_session(
+                        session.session_id,
+                        session.snapshot(),
+                    )
+                except Exception as exc:
+                    session.messages.pop()
+                    raise ConversationSessionError(str(exc)) from exc
+
+    def clear_session(self, session_id: UUID) -> None:
+        """Remove all messages while retaining the session identity."""
+        with self._lock:
+            session = self.get_session(session_id)
+            previous_messages = list(session.messages)
+
+            session.messages.clear()
+
+            if self._persistence is not None:
+                try:
+                    self._persistence.clear_session(session_id)
+                except Exception as exc:
+                    session.messages[:] = previous_messages
+                    raise ConversationSessionError(str(exc)) from exc
+
+    def delete_session(self, session_id: UUID) -> None:
+        """Delete a runtime-owned session."""
+        with self._lock:
+            session = self._sessions.get(session_id)
+
+            if session is None:
+                if self._persistence is not None:
+                    try:
+                        persisted = self._persistence.load_session(session_id)
+                    except Exception as exc:
+                        raise ConversationSessionError(str(exc)) from exc
+
+                    if persisted is not None:
+                        try:
+                            self._persistence.delete_session(session_id)
+                        except Exception as exc:
+                            raise ConversationSessionError(str(exc)) from exc
+                        return
+
+                raise ConversationSessionError(
+                    f"conversation session does not exist: {session_id}"
+                )
+
+            if self._persistence is not None:
+                try:
+                    self._persistence.delete_session(session_id)
+                except Exception as exc:
+                    raise ConversationSessionError(str(exc)) from exc
+
+            del self._sessions[session_id]
+
+    def has_session(self, session_id: UUID) -> bool:
+        """Return whether a session currently exists."""
+        with self._lock:
+            if session_id in self._sessions:
+                return True
+
+            if self._persistence is not None:
+                try:
+                    return self._persistence.load_session(session_id) is not None
+                except Exception:
+                    return False
+
+            return False
+
+    @property
+    def session_count(self) -> int:
+        """Return the number of active in-memory sessions."""
+        with self._lock:
+            return len(self._sessions)
+
+    def _normalize_message(
+        self,
+        message: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Validate and normalize a new conversation message."""
         if not isinstance(message, Mapping):
             raise ConversationSessionError(
                 "conversation message must be a mapping"
@@ -153,58 +291,35 @@ class ConversationSessionManager:
 
             normalized["name"] = name.strip()
 
-        with self._lock:
-            session = self.get_session(session_id)
+        return normalized
 
-            if (
-                len(session.messages)
-                >= self._max_messages_per_session
-            ):
-                raise ConversationSessionError(
-                    "conversation session reached the maximum number "
-                    f"of {self._max_messages_per_session} messages"
-                )
+    def _validate_and_append_loaded_message(
+        self,
+        session: ConversationSession,
+        message: Mapping[str, Any],
+    ) -> None:
+        """Validate persisted data using the same manager bounds."""
+        normalized = self._normalize_message(message)
 
-            current_length = sum(
-                len(str(item.get("content", "")))
-                for item in session.messages
+        if len(session.messages) >= self._max_messages_per_session:
+            raise ConversationSessionError(
+                "conversation session reached the maximum number "
+                f"of {self._max_messages_per_session} messages"
             )
 
-            if (
-                current_length + len(content)
-                > self._max_total_conversation_length
-            ):
-                raise ConversationSessionError(
-                    "conversation session exceeded the maximum total "
-                    f"content length of "
-                    f"{self._max_total_conversation_length} characters"
-                )
+        current_length = sum(
+            len(str(item.get("content", "")))
+            for item in session.messages
+        )
 
-            session.messages.append(normalized)
+        if (
+            current_length + len(normalized["content"])
+            > self._max_total_conversation_length
+        ):
+            raise ConversationSessionError(
+                "conversation session exceeded the maximum total "
+                "content length of "
+                f"{self._max_total_conversation_length} characters"
+            )
 
-    def clear_session(self, session_id: UUID) -> None:
-        """Remove all messages while retaining the session identity."""
-        with self._lock:
-            session = self.get_session(session_id)
-            session.messages.clear()
-
-    def delete_session(self, session_id: UUID) -> None:
-        """Delete a runtime-owned session."""
-        with self._lock:
-            if session_id not in self._sessions:
-                raise ConversationSessionError(
-                    f"conversation session does not exist: {session_id}"
-                )
-
-            del self._sessions[session_id]
-
-    def has_session(self, session_id: UUID) -> bool:
-        """Return whether a session currently exists."""
-        with self._lock:
-            return session_id in self._sessions
-
-    @property
-    def session_count(self) -> int:
-        """Return the number of active in-memory sessions."""
-        with self._lock:
-            return len(self._sessions)
+        session.messages.append(normalized)

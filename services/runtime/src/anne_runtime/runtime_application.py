@@ -20,6 +20,7 @@ from .execution import ExecutionCoordinator
 from .gemini_provider import GeminiModelProvider
 from .conversation_session import ConversationSessionError
 from .conversation_session_manager import ConversationSessionManager
+from .sqlite_conversation_session_persistence import SQLiteConversationSessionPersistence
 from .intelligence_contracts import IntelligenceRequest
 from .engineering_capability_router import EngineeringCapabilityRouter
 from .intelligence_orchestrator import IntelligenceOrchestrator
@@ -117,7 +118,20 @@ class RuntimeApplication:
 
         self._workspace_id = uuid4()
 
-        self._conversation_sessions = ConversationSessionManager()
+        self._runtime_data_dir = self._repository_root / "runtime-data"
+        self._runtime_data_dir.mkdir(parents=True, exist_ok=True)
+
+        self._conversation_session_path = (
+            self._runtime_data_dir / "conversation_sessions.sqlite3"
+        )
+        self._conversation_session_persistence = (
+            SQLiteConversationSessionPersistence(
+                self._conversation_session_path
+            )
+        )
+        self._conversation_sessions = ConversationSessionManager(
+            persistence=self._conversation_session_persistence,
+        )
 
         self._schema_dir = (
             self._repository_root
