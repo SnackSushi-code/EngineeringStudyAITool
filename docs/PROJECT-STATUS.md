@@ -13,7 +13,7 @@ The historical Phase 0.4 runtime-hardening milestones remain documented below fo
 The active implementation branch is:
 
 - Branch: `phase-2B/engineering-tools`
-- Latest synchronized commit: `58ba40e`
+- Latest synchronized commit: `3783a4f`
 - Commit: `feat: add cross-process context recovery`
 
 The active development track has progressed beyond the historical Phase 0.4.5 status entry and currently covers Phase 2 AI Core / Phase 2B engineering-tool and runtime-context work.
