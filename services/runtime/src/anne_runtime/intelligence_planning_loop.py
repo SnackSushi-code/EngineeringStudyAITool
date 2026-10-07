@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .cancellation import CancellationToken
+from .context_manager import ContextManager
 from .contracts import TaskRequest, TaskState
 from .intelligence_contracts import (
     IntelligenceDecisionType,
@@ -59,6 +60,7 @@ class IntelligencePlanningLoop:
         *,
         max_iterations: int = 8,
         engineering_tool_ids: tuple[str, ...] = (),
+        context_manager: ContextManager | None = None,
     ) -> None:
         if max_iterations <= 0:
             raise ValueError("max_iterations must be positive")
@@ -67,6 +69,7 @@ class IntelligencePlanningLoop:
         self._runtime_bridge = runtime_bridge
         self._max_iterations = max_iterations
         self._engineering_tool_ids = frozenset(engineering_tool_ids)
+        self._context_manager = context_manager or ContextManager()
 
     def run(
         self,
@@ -105,7 +108,19 @@ class IntelligencePlanningLoop:
                     stop_reason="CANCELLED",
                 )
 
-            invocation = self._intelligence.process(current_request)
+            context_snapshot = self._context_manager.build_context(
+                current_request.conversation,
+            )
+
+            bounded_request = IntelligenceRequest(
+                request_id=current_request.request_id,
+                task_id=current_request.task_id,
+                user_intent=current_request.user_intent,
+                conversation=context_snapshot.messages,
+                metadata=current_request.metadata,
+            )
+
+            invocation = self._intelligence.process(bounded_request)
             decision = invocation.result.decision
 
             if decision.decision_type == IntelligenceDecisionType.FINAL_RESPONSE:

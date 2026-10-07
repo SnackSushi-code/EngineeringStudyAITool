@@ -20,6 +20,7 @@ from .execution import ExecutionCoordinator
 from .gemini_provider import GeminiModelProvider
 from .conversation_session import ConversationSessionError
 from .conversation_session_manager import ConversationSessionManager
+from .context_manager import ContextManager
 from .sqlite_conversation_session_persistence import SQLiteConversationSessionPersistence
 from .intelligence_contracts import IntelligenceRequest
 from .engineering_capability_router import EngineeringCapabilityRouter
@@ -132,6 +133,7 @@ class RuntimeApplication:
         self._conversation_sessions = ConversationSessionManager(
             persistence=self._conversation_session_persistence,
         )
+        self._context_manager = ContextManager()
 
         self._schema_dir = (
             self._repository_root
@@ -339,6 +341,7 @@ class RuntimeApplication:
             self._runtime_bridge,
             max_iterations=8,
             engineering_tool_ids=engineering_tool_ids,
+            context_manager=self._context_manager,
         )
 
     def _register_unit_conversion_tool(self) -> None:
@@ -802,15 +805,23 @@ class RuntimeApplication:
                         "content": user_intent,
                     },
                 )
-                conversation = self._conversation_sessions.get_conversation(
+                stored_conversation = self._conversation_sessions.get_conversation(
                     session_id,
                 )
+                # The current user intent is represented separately by
+                # IntelligenceRequest.user_intent.
+                prior_conversation = stored_conversation[:-1]
             except ConversationSessionError as exc:
                 raise RuntimeApplicationError(str(exc)) from exc
         else:
-            conversation = self._parse_conversation(
+            prior_conversation = self._parse_conversation(
                 payload.get("conversation"),
             )
+
+        context_snapshot = self._context_manager.build_context(
+            prior_conversation,
+        )
+        conversation = context_snapshot.messages
 
         intelligence_request = IntelligenceRequest(
             request_id=request_uuid,
@@ -1052,11 +1063,6 @@ class RuntimeApplication:
                 "message payload conversation must be an array."
             )
 
-        if len(raw_conversation) > MAX_CONVERSATION_MESSAGES:
-            raise RuntimeApplicationError(
-                "message payload conversation exceeds the maximum "
-                f"of {MAX_CONVERSATION_MESSAGES} messages."
-            )
 
         normalized: list[Mapping[str, Any]] = []
 

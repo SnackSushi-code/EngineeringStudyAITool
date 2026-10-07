@@ -1,6 +1,10 @@
 ﻿from __future__ import annotations
 
 import sqlite3
+import json
+import os
+import subprocess
+import sys
 from uuid import UUID, uuid4
 
 import pytest
@@ -390,3 +394,122 @@ def test_persistence_survives_database_reopen(tmp_path):
 
     with SQLiteConversationSessionPersistence(database) as persistence:
         assert persistence.load_session(session_id) == messages
+def test_cross_process_session_recovery(tmp_path):
+    database = tmp_path / "sessions.db"
+    session_id = uuid4()
+
+    messages = (
+        {
+            "role": "user",
+            "content": "Explain Kirchhoff's voltage law.",
+        },
+        {
+            "role": "assistant",
+            "content": "The algebraic sum of voltages around a closed loop is zero.",
+        },
+        {
+            "role": "tool",
+            "name": "anne.calculator",
+            "content": "42",
+        },
+    )
+
+    runtime_source = str(
+        __import__("pathlib").Path(__file__).resolve().parents[1] / "src"
+    )
+
+    environment = os.environ.copy()
+    existing_pythonpath = environment.get("PYTHONPATH")
+
+    if existing_pythonpath:
+        environment["PYTHONPATH"] = (
+            runtime_source
+            + os.pathsep
+            + existing_pythonpath
+        )
+    else:
+        environment["PYTHONPATH"] = runtime_source
+
+    writer_code = """
+import sys
+from anne_runtime.sqlite_conversation_session_persistence import (
+    SQLiteConversationSessionPersistence,
+)
+from uuid import UUID
+
+database = sys.argv[1]
+session_id = UUID(sys.argv[2])
+
+messages = (
+    {
+        "role": "user",
+        "content": "Explain Kirchhoff's voltage law.",
+    },
+    {
+        "role": "assistant",
+        "content": "The algebraic sum of voltages around a closed loop is zero.",
+    },
+    {
+        "role": "tool",
+        "name": "anne.calculator",
+        "content": "42",
+    },
+)
+
+with SQLiteConversationSessionPersistence(database) as persistence:
+    persistence.save_session(session_id, messages)
+"""
+
+    reader_code = """
+import json
+import sys
+from anne_runtime.sqlite_conversation_session_persistence import (
+    SQLiteConversationSessionPersistence,
+)
+from uuid import UUID
+
+database = sys.argv[1]
+session_id = UUID(sys.argv[2])
+
+with SQLiteConversationSessionPersistence(database) as persistence:
+    messages = persistence.load_session(session_id)
+
+print(json.dumps(list(messages), ensure_ascii=False))
+"""
+
+    writer = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            writer_code,
+            str(database),
+            str(session_id),
+        ],
+        text=True,
+        capture_output=True,
+        env=environment,
+        check=False,
+    )
+
+    assert writer.returncode == 0, writer.stderr
+
+    reader = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            reader_code,
+            str(database),
+            str(session_id),
+        ],
+        text=True,
+        capture_output=True,
+        env=environment,
+        check=False,
+    )
+
+    assert reader.returncode == 0, reader.stderr
+
+    recovered = tuple(json.loads(reader.stdout))
+
+    assert recovered == messages
+
