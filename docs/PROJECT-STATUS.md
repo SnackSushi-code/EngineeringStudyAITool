@@ -13,14 +13,14 @@ The historical Phase 0.4 runtime-hardening milestones remain documented below fo
 The active implementation branch is:
 
 - Branch: `phase-2B/engineering-tools`
-- Latest synchronized commit: `3783a4f`
+- Latest synchronized commit: `bc513d3`
 - Commit: `feat: add cross-process context recovery`
 
 The active development track has progressed beyond the historical Phase 0.4.5 status entry and currently covers Phase 2 AI Core / Phase 2B engineering-tool and runtime-context work.
 
 ### Current Gate
 
-**Phase 2B ? Engineering Tools and Runtime Context: COMPLETE**
+**Phase 2B — Engineering Tools and Runtime Context: COMPLETE**
 
 The latest completed gate is cross-process context recovery.
 
@@ -36,7 +36,7 @@ Validation:
 
 The next gate is to verify the complete production intelligence path:
 
-Desktop ? Runtime Host ? RuntimeApplication ? Session/Context ? Model Router ? Provider ? validated decision ? Tool Authority ? Engineering Tool ? Result Validation ? Final Response ? Desktop
+Desktop → Runtime Host → RuntimeApplication → Session/Context → Model Router → Provider → validated decision → Tool Authority → Engineering Tool → Result Validation → Final Response → Desktop
 
 The gate must verify provider failure handling, timeout behavior, `TOOL_PROPOSAL` authority flow, correlation/provenance, provider-agnostic routing, and desktop/runtime integration.
 
