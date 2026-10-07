@@ -84,6 +84,59 @@ Build the controlled intelligence layer:
 - provider failure handling
 - usage/telemetry controls
 
+## Phase 2B — Engineering Tools and Runtime Context
+
+This is the active implementation track extending the Phase 2 AI Core with production engineering capabilities and durable runtime context.
+
+### Completed
+
+- Provider-backed intelligence runtime
+- Gemini model-provider integration
+- Model-output and `TOOL_PROPOSAL` contracts
+- Centralized tool authority boundary
+- Engineering capability catalog/router
+- Production engineering tool integrations
+- Cross-tool engineering integration coverage
+- Runtime-owned conversation sessions
+- SQLite conversation-session persistence
+- Deterministic bounded context management
+- Context-summary persistence boundary
+- Cross-process context recovery
+
+### Cross-Process Context Recovery Gate
+
+Completed and pushed to the development branch on 2026-10-07.
+
+Verified chain:
+
+Process A → SQLite → Process B → RuntimeApplication → persisted session → ContextManager → bounded context → planning loop
+
+Validation:
+
+- Phase 5J targeted persistence/context gate: **29/29 passing**
+- Commit: `58ba40e`
+- Branch: `phase-2B/engineering-tools`
+
+### Next Implementation Gate
+
+**AI Core Production-Path Verification**
+
+Verify the complete production path:
+
+Desktop → Runtime Host → RuntimeApplication → Session/Context → Model Router → Provider → validated model decision → Tool Authority → Engineering Tool → Result Validation → Final Response → Desktop
+
+The gate must also verify:
+
+- provider/network timeout handling
+- provider failure normalization
+- deterministic and Gemini execution
+- `TOOL_PROPOSAL` through the complete authority/policy/runtime path
+- request/task correlation
+- provider provenance
+- desktop-to-runtime message flow
+- provider-agnostic routing
+- regression behavior across the existing engineering tools
+
 ## Phase 3 — Memory and Learning
 
 Build persistent, inspectable learning:
