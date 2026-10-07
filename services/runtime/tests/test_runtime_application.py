@@ -1554,12 +1554,9 @@ def test_message_session_preserves_conversation_across_requests(
 
     assert len(captured_requests) == 2
 
-    assert captured_requests[0].conversation == (
-        {
-            "role": "user",
-            "content": "What is Newton's second law?",
-        },
-    )
+    # The current user intent is passed separately through
+    # IntelligenceRequest.user_intent. Conversation contains prior messages only.
+    assert captured_requests[0].conversation == ()
 
     assert captured_requests[1].conversation == (
         {
@@ -1569,10 +1566,6 @@ def test_message_session_preserves_conversation_across_requests(
         {
             "role": "assistant",
             "content": "response-1",
-        },
-        {
-            "role": "user",
-            "content": "Now explain it using an example.",
         },
     )
 
