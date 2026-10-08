@@ -24,7 +24,10 @@ from .context_manager import ContextManager
 from .sqlite_conversation_session_persistence import SQLiteConversationSessionPersistence
 from .intelligence_contracts import IntelligenceRequest
 from .engineering_capability_router import EngineeringCapabilityRouter
-from .intelligence_orchestrator import IntelligenceOrchestrator
+from .intelligence_orchestrator import (
+    IntelligenceOrchestrationError,
+    IntelligenceOrchestrator,
+)
 from .intelligence_planning_loop import IntelligencePlanningLoop
 from .intelligence_runtime_bridge import IntelligenceRuntimeBridge
 from .intelligence_tool_authority import (
@@ -84,6 +87,17 @@ GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 class RuntimeApplicationError(RuntimeError):
     """Raised when a runtime application request cannot be processed safely."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "ANN_E_RUNTIME_APPLICATION_ERROR",
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
 
 
 class RuntimeApplication:
@@ -849,10 +863,17 @@ class RuntimeApplication:
             input_artifacts=(),
         )
 
-        outcome = self._planning_loop.run(
-            intelligence_request,
-            task_request,
-        )
+        try:
+            outcome = self._planning_loop.run(
+                intelligence_request,
+                task_request,
+            )
+        except IntelligenceOrchestrationError as exc:
+            raise RuntimeApplicationError(
+                str(exc),
+                code=exc.code,
+                retryable=exc.retryable,
+            ) from exc
 
         if not outcome.completed:
             raise RuntimeApplicationError(

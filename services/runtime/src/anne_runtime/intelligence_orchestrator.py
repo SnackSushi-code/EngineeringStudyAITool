@@ -25,6 +25,17 @@ from .model_service import ModelService
 class IntelligenceOrchestrationError(RuntimeError):
     """Raised when intelligence orchestration cannot produce a valid decision."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "INTELLIGENCE_ORCHESTRATION_ERROR",
+        retryable: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+
 
 @dataclass(frozen=True)
 class IntelligenceInvocation:
@@ -157,8 +168,13 @@ class IntelligenceOrchestrator:
         try:
             invocation = self._model_service.invoke(model_request)
         except Exception as exc:
+            code = getattr(exc, "code", "INTELLIGENCE_ORCHESTRATION_ERROR")
+            retryable = bool(getattr(exc, "retryable", False))
+
             raise IntelligenceOrchestrationError(
-                f"model invocation failed: {type(exc).__name__}"
+                f"model invocation failed: {type(exc).__name__}",
+                code=code,
+                retryable=retryable,
             ) from exc
 
         response = invocation.response

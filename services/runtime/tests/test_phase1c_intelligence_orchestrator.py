@@ -287,6 +287,37 @@ def test_unsupported_finish_reason_is_rejected():
         IntelligenceOrchestrator(service).process(request)
 
 
+def test_model_provider_failure_preserves_error_metadata():
+    request = make_request()
+
+    class FailingProvider(DeterministicModelProvider):
+        def generate(self, model_request):
+            error = RuntimeError("provider unavailable")
+            error.code = "GEMINI_SERVER_ERROR"
+            error.retryable = True
+            raise error
+
+    registry = ProviderRegistry()
+    registry.register(FailingProvider())
+
+    service = ModelService(
+        ModelRouter(
+            registry,
+            default_provider_id="deterministic",
+            default_model="deterministic-v1",
+        )
+    )
+
+    with pytest.raises(
+        IntelligenceOrchestrationError,
+        match="model invocation failed",
+    ) as exc_info:
+        IntelligenceOrchestrator(service).process(request)
+
+    assert exc_info.value.code == "GEMINI_SERVER_ERROR"
+    assert exc_info.value.retryable is True
+
+
 def test_model_failure_is_wrapped_without_execution():
     request = make_request()
 

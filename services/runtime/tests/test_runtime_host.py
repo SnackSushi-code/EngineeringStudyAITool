@@ -580,3 +580,42 @@ def test_host_streams_response_before_stdin_eof(monkeypatch) -> None:
 
     assert not host_thread.is_alive()
     assert result_holder == [0]
+
+def test_host_preserves_runtime_application_error_metadata(monkeypatch) -> None:
+    request = RuntimeRequest(
+        request_id=str(uuid4()),
+        task_id=str(uuid4()),
+        operation="message",
+        payload={},
+    )
+
+    from anne_runtime.runtime_application import RuntimeApplicationError
+
+    def failing_dispatch(*, request, application):
+        raise RuntimeApplicationError(
+            "model invocation failed: ModelProviderError",
+            code="GEMINI_SERVER_ERROR",
+            retryable=True,
+        )
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host._dispatch",
+        failing_dispatch,
+    )
+
+    from anne_runtime.runtime_host import _handle_line
+
+    response = _handle_line(
+        raw_line=encode_message(request),
+        application=object(),
+    )
+
+    assert response.request_id == request.request_id
+    assert response.task_id == request.task_id
+    assert response.status == "failed"
+
+    error = response.payload["error"]
+
+    assert error["code"] == "GEMINI_SERVER_ERROR"
+    assert error["message"] == "model invocation failed: ModelProviderError"
+    assert error["retryable"] is True

@@ -134,8 +134,9 @@ def _handle_line(
             status="failed",
             payload={
                 "error": {
-                    "code": "ANN_E_RUNTIME_APPLICATION_ERROR",
+                    "code": exc.code,
                     "message": str(exc),
+                    "retryable": exc.retryable,
                 }
             },
         )
