@@ -146,10 +146,10 @@ def test_factory_honors_gemini_specific_model(monkeypatch):
     assert invocation.response.model == "custom-gemini-model"
     assert invocation.response.content == "gemini test response"
 
-def test_factory_prefers_generic_model_name_for_gemini(monkeypatch):
+def test_factory_ignores_generic_model_name_for_gemini(monkeypatch):
     monkeypatch.setenv("ANNE_MODEL_PROVIDER", GEMINI_PROVIDER_ID)
-    monkeypatch.setenv("ANNE_MODEL_NAME", "generic-model")
-    monkeypatch.setenv("ANNE_GEMINI_MODEL", "specific-gemini-model")
+    monkeypatch.setenv("ANNE_MODEL_NAME", "deterministic-v1")
+    monkeypatch.setenv("ANNE_GEMINI_MODEL", "gemini-3.5-flash-lite")
 
     monkeypatch.setattr(
         "anne_runtime.gemini_provider.GeminiModelProvider.generate",
@@ -162,13 +162,13 @@ def test_factory_prefers_generic_model_name_for_gemini(monkeypatch):
 
     invocation = service.invoke(
         make_request(
-            "00000000-0000-0000-0000-000000000007",
-            "00000000-0000-0000-0000-000000000008",
+            "00000000-0000-0000-0000-000000000009",
+            "00000000-0000-0000-0000-000000000010",
         )
     )
 
     assert invocation.response.provider_id == GEMINI_PROVIDER_ID
-    assert invocation.response.model == "generic-model"
+    assert invocation.response.model == "gemini-3.5-flash-lite"
 
 
 def test_factory_rejects_blank_provider(monkeypatch):

@@ -51,8 +51,7 @@ class ModelProviderFactory:
 
         if selected_provider == GEMINI_PROVIDER_ID:
             gemini_model = (
-                selected_model
-                or os.getenv(GEMINI_MODEL_ENV)
+                os.getenv(GEMINI_MODEL_ENV)
                 or GEMINI_MODEL
             ).strip()
 
