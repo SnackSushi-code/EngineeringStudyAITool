@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -15,9 +14,9 @@ from .contracts import (
     RetryMode,
     TaskRequest,
 )
-from .deterministic_provider import DeterministicModelProvider
+
 from .execution import ExecutionCoordinator
-from .gemini_provider import GeminiModelProvider
+
 from .conversation_session import ConversationSessionError
 from .conversation_session_manager import ConversationSessionManager
 from .context_manager import ContextManager
@@ -34,7 +33,11 @@ from .intelligence_tool_authority import (
     ToolAuthorityResolver,
     ToolCapabilityCatalog,
 )
-from .model_router import ModelRouter
+
+from .model_provider_factory import (
+    ModelProviderConfigurationError,
+    ModelProviderFactory,
+)
 from .model_service import ModelService
 from .calculator_tool import calculator_handler
 from .circuit_analysis_tool import circuit_analysis_handler
@@ -57,7 +60,7 @@ from .probability_tool import probability_handler
 from .interpolation_tool import interpolation_handler
 from .regression_tool import regression_handler
 from .signal_processing_tool import frequency_domain_handler, signal_processing_handler
-from .provider_registry import ProviderRegistry
+
 from .tool_contracts import (
     ToolArgument,
     ToolArgumentSchema,
@@ -74,15 +77,6 @@ INTELLIGENCE_CONTRACT_VERSION = "1.0"
 MAX_USER_INTENT_LENGTH = 16_000
 MAX_CONVERSATION_MESSAGES = 32
 MAX_CONVERSATION_CONTENT_LENGTH = 16_000
-
-MODEL_PROVIDER_ENV = "ANNE_MODEL_PROVIDER"
-MODEL_NAME_ENV = "ANNE_MODEL_NAME"
-
-DETERMINISTIC_PROVIDER_ID = "deterministic"
-DETERMINISTIC_MODEL = "deterministic-v1"
-
-GEMINI_PROVIDER_ID = "gemini"
-GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 
 class RuntimeApplicationError(RuntimeError):
@@ -907,74 +901,12 @@ class RuntimeApplication:
         }
 
     def _build_model_service(self) -> ModelService:
-        providers = ProviderRegistry()
-
-        providers.register(
-            DeterministicModelProvider(
-                responder=self._deterministic_responder,
-            )
-        )
-
-        selected_provider = (
-            os.getenv(MODEL_PROVIDER_ENV)
-            or DETERMINISTIC_PROVIDER_ID
-        ).strip().lower()
-
-        selected_model = (
-            os.getenv(MODEL_NAME_ENV)
-            or ""
-        ).strip()
-
-        if selected_provider == GEMINI_PROVIDER_ID:
-            gemini_model = (
-                selected_model
-                or os.getenv("ANNE_GEMINI_MODEL")
-                or GEMINI_MODEL
-            ).strip()
-
-            if not gemini_model:
-                raise RuntimeApplicationError(
-                    "Gemini model selection cannot be blank."
-                )
-
-            providers.register(
-                GeminiModelProvider(
-                    model=gemini_model,
-                )
-            )
-
-            return ModelService(
-                ModelRouter(
-                    providers,
-                    default_provider_id=GEMINI_PROVIDER_ID,
-                    default_model=gemini_model,
-                )
-            )
-
-        if selected_provider == DETERMINISTIC_PROVIDER_ID:
-            deterministic_model = (
-                selected_model
-                or DETERMINISTIC_MODEL
-            ).strip()
-
-            if deterministic_model != DETERMINISTIC_MODEL:
-                raise RuntimeApplicationError(
-                    "Unsupported deterministic model: "
-                    f"{deterministic_model}"
-                )
-
-            return ModelService(
-                ModelRouter(
-                    providers,
-                    default_provider_id=DETERMINISTIC_PROVIDER_ID,
-                    default_model=DETERMINISTIC_MODEL,
-                )
-            )
-
-        raise RuntimeApplicationError(
-            "Unsupported model provider: "
-            f"{selected_provider}"
-        )
+        try:
+            return ModelProviderFactory(
+                deterministic_responder=self._deterministic_responder,
+            ).build_model_service()
+        except ModelProviderConfigurationError as exc:
+            raise RuntimeApplicationError(str(exc)) from exc
 
     @staticmethod
     def _deterministic_responder(model_request: Any) -> str:
