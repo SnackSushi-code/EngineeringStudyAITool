@@ -613,6 +613,13 @@ Rules:
             None,
         )
 
+        if not isinstance(status_code, int):
+            status_code = getattr(
+                exc,
+                "code",
+                None,
+            )
+
         if status_code in (401, 403):
             return ModelProviderError(
                 "Gemini authentication failed.",

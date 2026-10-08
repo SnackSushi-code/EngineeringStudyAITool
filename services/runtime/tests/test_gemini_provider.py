@@ -489,6 +489,30 @@ def test_provider_maps_timeout_to_retryable_transport_error():
     assert exc_info.value.retryable is True
 
 
+def test_provider_maps_server_error_code_to_retryable_server_error():
+    class FakeServerError(Exception):
+        code = 503
+
+    provider = GeminiModelProvider(
+        api_key="test-key",
+        model=MODEL,
+        client=FakeClient(
+            error=FakeServerError(
+                "503 UNAVAILABLE: model is currently experiencing high demand"
+            ),
+        ),
+    )
+
+    with pytest.raises(
+        ModelProviderError,
+        match="server error",
+    ) as exc_info:
+        provider.generate(make_request())
+
+    assert exc_info.value.code == "GEMINI_SERVER_ERROR"
+    assert exc_info.value.retryable is True
+
+
 def test_provider_maps_api_failures_to_model_provider_error():
     class FakeUnauthorizedError(Exception):
         status_code = 401
