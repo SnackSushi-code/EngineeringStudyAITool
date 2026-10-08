@@ -13,32 +13,83 @@ The historical Phase 0.4 runtime-hardening milestones remain documented below fo
 The active implementation branch is:
 
 - Branch: `phase-2B/engineering-tools`
-- Latest synchronized commit: `bc513d3`
-- Commit: `feat: add cross-process context recovery`
+- Latest synchronized commit: `5c77420`
+- Commit: `fix: preserve provider retry metadata through runtime`
 
-The active development track has progressed beyond the historical Phase 0.4.5 status entry and currently covers Phase 2 AI Core / Phase 2B engineering-tool and runtime-context work.
+The active development track is Phase 2 AI Core / Phase 2B engineering-tool and runtime-context work.
 
 ### Current Gate
 
-**Phase 2B — Engineering Tools and Runtime Context: COMPLETE**
+**Phase 2B - Engineering Tools and Runtime Context: COMPLETE**
 
-The latest completed gate is cross-process context recovery.
+Completed capabilities include:
 
-Validation:
+- Runtime-owned conversation sessions
+- Persistent conversation-session storage
+- Cross-process context/session recovery
+- Desktop runtime session boundary
+- Desktop runtime response routing
+- Deterministic and Gemini provider execution
+- Engineering-tool execution through the centralized authority path
+- Provider-agnostic model routing
+- Provider provenance in runtime responses
+- Gemini server-error classification
+- Retryability metadata propagation from provider -> orchestrator -> runtime application -> runtime host
+- Desktop/runtime end-to-end message flow
 
-- Cross-process/session/context persistence gate: **29/29 passing**
+Validation completed:
+
+- Phase 2B context/session persistence and recovery gate: **29/29 passing**
+- Gate B focused AI-core runtime regression suite: **75/75 passing**
+- Gemini provider regression suite: **21/21 passing**
+- Intelligence orchestrator regression suite: **16/16 passing**
+- Runtime application regression suite: **25/25 passing**
+- Runtime host regression suite: **13/13 passing**
 - Changes pushed to `origin/phase-2B/engineering-tools`
 - Unrelated desktop working-tree changes remain intentionally uncommitted
 
+### Production Path Verification
+
+The complete production intelligence path has now been exercised:
+
+`Desktop -> Runtime Host -> RuntimeApplication -> Session/Context -> Model Router -> Provider -> validated decision -> Tool Authority -> Engineering Tool -> Result Validation -> Final Response -> Desktop`
+
+Verified behaviors include:
+
+- Deterministic provider end-to-end message execution
+- Gemini end-to-end message execution
+- Gemini `TOOL_PROPOSAL` through the centralized authority path
+- Engineering-tool execution followed by model finalization
+- Session continuity
+- Cross-process session recovery
+- Desktop runtime response routing
+- Provider provenance
+- Gemini 503 server-error classification as retryable
+- Preservation of provider error code and retryability metadata across runtime boundaries
+- Fail-closed tool authority behavior
+
 ### Next Gate
 
-**AI Core Production-Path Verification**
+**AI Core - Multi-Model Provider Expansion**
 
-The next gate is to verify the complete production intelligence path:
+The next gate is to expand the provider layer beyond the current deterministic + Gemini implementations while preserving the existing provider-agnostic routing contract.
 
-Desktop → Runtime Host → RuntimeApplication → Session/Context → Model Router → Provider → validated decision → Tool Authority → Engineering Tool → Result Validation → Final Response → Desktop
+The gate should establish:
 
-The gate must verify provider failure handling, timeout behavior, `TOOL_PROPOSAL` authority flow, correlation/provenance, provider-agnostic routing, and desktop/runtime integration.
+- A clean provider registration/configuration model
+- Multiple independently selectable model providers
+- Provider capability/identity metadata
+- Consistent model request/response contracts
+- Provider-specific failure normalization
+- Provider-independent orchestration behavior
+- Regression coverage proving one provider can fail without changing the core authority path
+- No provider gaining authorization authority over tools or privileged operations
+
+The existing centralized authority boundary remains unchanged:
+
+> Models propose. Policy and tool authority authorize.
+
+Do not begin Colony, 3D robot integration, or unrelated UI expansion until this AI-core provider boundary is stable.
 
 ## Completed Milestones
 
