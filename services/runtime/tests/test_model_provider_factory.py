@@ -145,3 +145,39 @@ def test_factory_honors_gemini_specific_model(monkeypatch):
     assert invocation.response.provider_id == GEMINI_PROVIDER_ID
     assert invocation.response.model == "custom-gemini-model"
     assert invocation.response.content == "gemini test response"
+
+def test_factory_prefers_generic_model_name_for_gemini(monkeypatch):
+    monkeypatch.setenv("ANNE_MODEL_PROVIDER", GEMINI_PROVIDER_ID)
+    monkeypatch.setenv("ANNE_MODEL_NAME", "generic-model")
+    monkeypatch.setenv("ANNE_GEMINI_MODEL", "specific-gemini-model")
+
+    monkeypatch.setattr(
+        "anne_runtime.gemini_provider.GeminiModelProvider.generate",
+        fake_gemini_response,
+    )
+
+    service = ModelProviderFactory(
+        deterministic_responder=deterministic_responder,
+    ).build_model_service()
+
+    invocation = service.invoke(
+        make_request(
+            "00000000-0000-0000-0000-000000000007",
+            "00000000-0000-0000-0000-000000000008",
+        )
+    )
+
+    assert invocation.response.provider_id == GEMINI_PROVIDER_ID
+    assert invocation.response.model == "generic-model"
+
+
+def test_factory_rejects_blank_provider(monkeypatch):
+    monkeypatch.setenv("ANNE_MODEL_PROVIDER", "   ")
+
+    with pytest.raises(
+        ModelProviderConfigurationError,
+        match="Unsupported model provider",
+    ):
+        ModelProviderFactory(
+            deterministic_responder=deterministic_responder,
+        ).build_model_service()
