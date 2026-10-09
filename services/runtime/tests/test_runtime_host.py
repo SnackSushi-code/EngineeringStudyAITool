@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -619,3 +619,56 @@ def test_host_preserves_runtime_application_error_metadata(monkeypatch) -> None:
     assert error["code"] == "GEMINI_SERVER_ERROR"
     assert error["message"] == "model invocation failed: ModelProviderError"
     assert error["retryable"] is True
+
+def test_host_handles_invalid_stdout_pipe(monkeypatch) -> None:
+    request = RuntimeRequest(
+        request_id=str(uuid4()),
+        task_id=str(uuid4()),
+        operation="health",
+        payload={},
+    )
+
+    def fake_application(*, repository_root):
+        return object()
+
+    def fake_handle_line(*, raw_line, application):
+        decoded_request = decode_request(raw_line)
+        return RuntimeResponse(
+            request_id=decoded_request.request_id,
+            task_id=decoded_request.task_id,
+            status="completed",
+            payload={"healthy": True},
+        )
+
+    class FakeStdin:
+        def __iter__(self):
+            yield encode_message(request) + "\n"
+
+    class InvalidPipeStdout:
+        def write(self, value):
+            return len(value)
+
+        def flush(self):
+            raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host.RuntimeApplication",
+        fake_application,
+    )
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host._handle_line",
+        fake_handle_line,
+    )
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host.sys",
+        type(
+            "FakeSys",
+            (),
+            {
+                "stdin": FakeStdin(),
+                "stdout": InvalidPipeStdout(),
+            },
+        ),
+    )
+
+    assert run_host() == 0

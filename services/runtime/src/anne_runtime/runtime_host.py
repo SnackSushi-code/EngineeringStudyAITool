@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import errno
 import json
 from concurrent.futures import ThreadPoolExecutor
 import sys
@@ -71,7 +72,10 @@ def run_host() -> int:
                 sys.stdout.flush()
         except BrokenPipeError:
             return None
-
+        except OSError as exc:
+            if exc.errno in (errno.EBADF, errno.EINVAL, errno.EPIPE):
+                return None
+            raise
         return response
 
     with ThreadPoolExecutor(
