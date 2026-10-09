@@ -558,3 +558,98 @@ def test_provider_does_not_send_authority_fields_to_gemini():
 
     for field in forbidden_fields:
         assert field not in serialized_schema
+
+
+def test_provider_maps_google_client_error_to_invalid_request():
+    from google.genai.errors import ClientError
+
+    error = ClientError(
+        400,
+        {
+            "error": {
+                "status": "INVALID_ARGUMENT",
+                "message": "sensitive request details must not be exposed",
+            }
+        },
+        None,
+    )
+    provider = GeminiModelProvider(
+        api_key="test-key",
+        model=MODEL,
+        client=FakeClient(error=error),
+    )
+
+    with pytest.raises(ModelProviderError) as exc_info:
+        provider.generate(make_request())
+
+    assert exc_info.value.code == "GEMINI_INVALID_REQUEST"
+    assert exc_info.value.retryable is False
+    assert "HTTP 400" in str(exc_info.value)
+    assert "INVALID_ARGUMENT" in str(exc_info.value)
+    assert "sensitive request details" not in str(exc_info.value)
+
+
+def test_provider_maps_google_client_error_rate_limit():
+    from google.genai.errors import ClientError
+
+    error = ClientError(
+        429,
+        {"error": {"status": "RESOURCE_EXHAUSTED", "message": "rate limited"}},
+        None,
+    )
+    provider = GeminiModelProvider(
+        api_key="test-key",
+        model=MODEL,
+        client=FakeClient(error=error),
+    )
+
+    with pytest.raises(ModelProviderError) as exc_info:
+        provider.generate(make_request())
+
+    assert exc_info.value.code == "GEMINI_RATE_LIMITED"
+    assert exc_info.value.retryable is True
+    assert "HTTP 429" in str(exc_info.value)
+
+
+def test_provider_maps_google_client_error_server_failure():
+    from google.genai.errors import ServerError
+
+    error = ServerError(
+        503,
+        {"error": {"status": "UNAVAILABLE", "message": "temporary failure"}},
+        None,
+    )
+    provider = GeminiModelProvider(
+        api_key="test-key",
+        model=MODEL,
+        client=FakeClient(error=error),
+    )
+
+    with pytest.raises(ModelProviderError) as exc_info:
+        provider.generate(make_request())
+
+    assert exc_info.value.code == "GEMINI_SERVER_ERROR"
+    assert exc_info.value.retryable is True
+    assert "HTTP 503" in str(exc_info.value)
+
+
+def test_provider_maps_google_client_error_not_found():
+    from google.genai.errors import ClientError
+
+    error = ClientError(
+        404,
+        {"error": {"status": "NOT_FOUND", "message": "resource not found"}},
+        None,
+    )
+    provider = GeminiModelProvider(
+        api_key="test-key",
+        model=MODEL,
+        client=FakeClient(error=error),
+    )
+
+    with pytest.raises(ModelProviderError) as exc_info:
+        provider.generate(make_request())
+
+    assert exc_info.value.code == "GEMINI_RESOURCE_NOT_FOUND"
+    assert exc_info.value.retryable is False
+    assert "HTTP 404" in str(exc_info.value)

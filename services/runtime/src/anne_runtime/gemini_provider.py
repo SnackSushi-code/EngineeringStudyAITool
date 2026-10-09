@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import json
 import os
 from typing import Any, Literal
@@ -607,61 +608,106 @@ Rules:
     def _provider_error(
         exc: Exception,
     ) -> ModelProviderError:
-        status_code = getattr(
-            exc,
-            "status_code",
-            None,
-        )
+        # google-genai APIError exposes the HTTP response code as `code`.
+        # Some other clients expose it as `status_code`.
+        status_code = getattr(exc, "status_code", None)
+        if not isinstance(status_code, int):
+            status_code = getattr(exc, "code", None)
 
         if not isinstance(status_code, int):
-            status_code = getattr(
-                exc,
-                "code",
-                None,
-            )
+            status_code = None
+
+        # Keep only a short, machine-style status label. Do not include
+        # raw exception text or response bodies in diagnostics.
+        raw_status = getattr(exc, "status", None)
+        safe_status = None
+        if isinstance(raw_status, str):
+            candidate = raw_status.strip()
+            if candidate and len(candidate) <= 80 and re.fullmatch(
+                r"[A-Za-z0-9_.-]+", candidate
+            ):
+                safe_status = candidate
+
+        status_suffix = ""
+        if status_code is not None:
+            status_suffix = f" (HTTP {status_code}"
+            if safe_status:
+                status_suffix += f", status={safe_status}"
+            status_suffix += ")"
+        elif safe_status:
+            status_suffix = f" (status={safe_status})"
 
         if status_code in (401, 403):
             return ModelProviderError(
-                "Gemini authentication failed.",
+                "Gemini authentication failed." + status_suffix,
                 code="GEMINI_AUTHENTICATION_FAILED",
                 retryable=False,
             )
 
         if status_code == 429:
             return ModelProviderError(
-                "Gemini rate limit was reached.",
+                "Gemini rate limit was reached." + status_suffix,
                 code="GEMINI_RATE_LIMITED",
                 retryable=True,
             )
 
-        if (
-            isinstance(status_code, int)
-            and status_code >= 500
+        if status_code == 404:
+            return ModelProviderError(
+                "Gemini model or resource was not found." + status_suffix,
+                code="GEMINI_RESOURCE_NOT_FOUND",
+                retryable=False,
+            )
+
+        if status_code == 400:
+            return ModelProviderError(
+                "Gemini rejected the request as invalid." + status_suffix,
+                code="GEMINI_INVALID_REQUEST",
+                retryable=False,
+            )
+
+        if status_code == 408:
+            return ModelProviderError(
+                "Gemini request timed out." + status_suffix,
+                code="GEMINI_TRANSPORT_ERROR",
+                retryable=True,
+            )
+
+        if status_code == 409:
+            return ModelProviderError(
+                "Gemini reported a request conflict." + status_suffix,
+                code="GEMINI_REQUEST_CONFLICT",
+                retryable=False,
+            )
+
+        if status_code == 425:
+            return ModelProviderError(
+                "Gemini temporarily rejected the request." + status_suffix,
+                code="GEMINI_TEMPORARILY_UNAVAILABLE",
+                retryable=True,
+            )
+
+        if status_code == 408 or (
+            status_code is not None and status_code >= 500
         ):
             return ModelProviderError(
-                "Gemini service returned a server error.",
+                "Gemini service returned a server error." + status_suffix,
                 code="GEMINI_SERVER_ERROR",
                 retryable=True,
             )
 
         name = type(exc).__name__.lower()
-
         if any(
             marker in name
-            for marker in (
-                "timeout",
-                "connection",
-                "transport",
-            )
+            for marker in ("timeout", "connection", "transport")
         ):
             return ModelProviderError(
-                "Gemini transport request failed.",
+                "Gemini transport request failed." + status_suffix,
                 code="GEMINI_TRANSPORT_ERROR",
                 retryable=True,
             )
 
         return ModelProviderError(
-            f"Gemini request failed: {type(exc).__name__}",
+            f"Gemini request failed: {type(exc).__name__}" + status_suffix,
             code="GEMINI_REQUEST_FAILED",
             retryable=False,
         )
