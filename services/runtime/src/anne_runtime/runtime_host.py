@@ -123,9 +123,26 @@ def _handle_line(
             application=application,
         )
     except RuntimeApplicationError as exc:
+        cause_types: list[str] = []
+        cause = exc.__cause__
+        seen_causes: set[int] = set()
+
+        while cause is not None and id(cause) not in seen_causes:
+            seen_causes.add(id(cause))
+            cause_types.append(type(cause).__name__)
+            cause = cause.__cause__
+
+        cause_summary = (
+            " | cause chain: " + " -> ".join(cause_types)
+            if cause_types
+            else " | cause chain: unavailable"
+        )
+
         _write_diagnostic(
             "Runtime application rejected request: "
-            f"{exc}"
+            f"{exc} "
+            f"(code={exc.code}, retryable={exc.retryable})"
+            f"{cause_summary}"
         )
 
         return RuntimeResponse(
