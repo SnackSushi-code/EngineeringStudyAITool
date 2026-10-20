@@ -1,9 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import errno
 import json
 from concurrent.futures import ThreadPoolExecutor
 import sys
+import traceback
 from pathlib import Path
 from typing import Any, Mapping
 from uuid import UUID
@@ -37,6 +38,11 @@ def run_host() -> int:
     stderr:
         Diagnostics only.
     """
+    # The desktop protocol uses UTF-8 JSON lines, including Unicode text.
+    # Reconfigure only real text streams that support this operation.
+    reconfigure_stdout = getattr(sys.stdout, "reconfigure", None)
+    if callable(reconfigure_stdout):
+        reconfigure_stdout(encoding="utf-8", errors="strict")
 
     try:
         application = RuntimeApplication(
@@ -141,6 +147,12 @@ def _handle_line(
             if cause_types
             else " | cause chain: unavailable"
         )
+
+        traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
+        cause = exc.__cause__
+        while cause is not None:
+            traceback.print_exception(type(cause), cause, cause.__traceback__, file=sys.stderr)
+            cause = cause.__cause__
 
         _write_diagnostic(
             "Runtime application rejected request: "

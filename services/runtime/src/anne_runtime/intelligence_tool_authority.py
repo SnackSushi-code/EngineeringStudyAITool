@@ -79,6 +79,22 @@ class ToolAuthorityResolver:
         try:
             canonical_arguments = dict(proposal.arguments)
 
+            operation_argument = next(
+                (
+                    argument
+                    for argument in d.arguments.arguments
+                    if argument.name == "operation"
+                ),
+                None,
+            )
+
+            if (
+                operation_argument is not None
+                and operation_argument.required
+                and "operation" not in canonical_arguments
+            ):
+                canonical_arguments["operation"] = proposal.operation
+
             d.arguments.validate(canonical_arguments)
             call = ToolCall(
                 schema_version="1.0",

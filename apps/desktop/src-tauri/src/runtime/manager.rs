@@ -8,6 +8,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread;
+use std::time::Duration;
 
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -15,6 +16,7 @@ use uuid::Uuid;
 use super::RuntimeManagerError;
 
 const PROTOCOL_VERSION: &str = "1.0";
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 const RUNTIME_MODULE: &str = "anne_runtime.runtime_host";
 
 type PendingResponseSender = Sender<Result<Value, String>>;
@@ -250,16 +252,30 @@ impl RuntimeManager {
             return Err(error);
         }
 
-        match response_receiver.recv() {
+        self.wait_for_response(&request_id, response_receiver, REQUEST_TIMEOUT)
+    }
+
+    fn wait_for_response(
+        &self,
+        request_id: &str,
+        response_receiver: mpsc::Receiver<Result<Value, String>>,
+        timeout: Duration,
+    ) -> Result<Value, RuntimeManagerError> {
+        match response_receiver.recv_timeout(timeout) {
             Ok(Ok(response)) => Ok(response),
             Ok(Err(message)) => {
-                self.remove_pending_request(&request_id);
-
+                self.remove_pending_request(request_id);
                 Err(RuntimeManagerError::ProcessIo(message))
             }
-            Err(_) => {
-                self.remove_pending_request(&request_id);
-
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                self.remove_pending_request(request_id);
+                Err(RuntimeManagerError::RequestTimeout(format!(
+                    "No response was received within {} seconds.",
+                    timeout.as_secs_f64()
+                )))
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                self.remove_pending_request(request_id);
                 Err(RuntimeManagerError::ProcessExited(
                     "Runtime response channel closed before a response was received.".to_string(),
                 ))
@@ -454,7 +470,9 @@ fn response_reader_loop<R: BufRead>(
 
         response_line.clear();
 
-        match reader.read_line(&mut response_line) {
+        let mut response_bytes = Vec::new();
+
+        match reader.read_until(b'\n', &mut response_bytes) {
             Ok(0) => {
                 fail_pending_requests(
                     &pending,
@@ -467,13 +485,46 @@ fn response_reader_loop<R: BufRead>(
             Err(error) => {
                 fail_pending_requests(
                     &pending,
-                    format!("Unable to read runtime response: {error}"),
+                    format!("Unable to read runtime response bytes: {error}"),
                 );
 
                 break;
             }
         }
 
+        response_line = match String::from_utf8(response_bytes) {
+            Ok(line) => line,
+            Err(error) => {
+                let utf8_error = error.utf8_error();
+                let invalid_offset = utf8_error.valid_up_to();
+                let invalid_length = utf8_error.error_len().unwrap_or(1);
+                let bytes = error.into_bytes();
+
+                let context_start = invalid_offset.saturating_sub(32);
+                let context_end = (invalid_offset + invalid_length + 32).min(bytes.len());
+
+                let context = bytes[context_start..context_end]
+                    .iter()
+                    .map(|byte| format!("{byte:02X}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                eprintln!(
+                    "[ann-e-utf8-debug] Invalid UTF-8; total_bytes={}, invalid_offset={}, invalid_length={}, context_start={}, context_bytes={}",
+                    bytes.len(),
+                    invalid_offset,
+                    invalid_length,
+                    context_start,
+                    context
+                );
+                fail_pending_requests(
+                    &pending,
+                    "Runtime response contained invalid UTF-8 bytes; inspect runtime stderr diagnostics.".to_string(),
+                );
+
+                break;
+            }
+        };
         let response: Value = match serde_json::from_str(response_line.trim()) {
             Ok(response) => response,
             Err(error) => {
@@ -504,12 +555,10 @@ fn response_reader_loop<R: BufRead>(
         };
 
         let Some(pending_request) = pending_request else {
-            fail_pending_requests(
-                &pending,
-                format!("Runtime returned a response for unknown request_id '{request_id}'."),
+            eprintln!(
+                "[ann-e-runtime-debug] Ignoring response for unknown or expired request_id '{request_id}'."
             );
-
-            break;
+            continue;
         };
 
         let validation = validate_response(&response, &request_id, &pending_request.task_id);
@@ -854,7 +903,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_response_request_id_and_fails_pending_requests() {
+    fn ignores_late_unknown_response_and_continues_reading() {
         let manager = RuntimeManager::new();
 
         let receiver = insert_pending_request(&manager.pending, "request-1", "task-1");
@@ -862,8 +911,9 @@ mod tests {
         let shutdown = Arc::new(AtomicBool::new(false));
         let pending = Arc::clone(&manager.pending);
 
-        let response = make_response("unknown-request", "task-unknown", "completed");
-        let serialized = format!("{response}\n");
+        let late_response = make_response("expired-request", "expired-task", "completed");
+        let valid_response = make_response("request-1", "task-1", "completed");
+        let serialized = format!("{late_response}\n{valid_response}\n");
 
         response_reader_loop(
             std::io::Cursor::new(serialized.into_bytes()),
@@ -871,14 +921,40 @@ mod tests {
             pending,
         );
 
-        let result = receiver.recv().unwrap();
+        let result = receiver.recv().unwrap().unwrap();
+        assert_eq!(result["request_id"], "request-1");
+        assert!(manager.pending.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn request_timeout_removes_only_its_pending_entry() {
+        let manager = RuntimeManager::new();
+
+        let timed_out_receiver =
+            insert_pending_request(&manager.pending, "request-timeout", "task-timeout");
+        let still_pending_receiver =
+            insert_pending_request(&manager.pending, "request-active", "task-active");
+
+        let result = manager.wait_for_response(
+            "request-timeout",
+            timed_out_receiver,
+            Duration::from_millis(10),
+        );
 
         assert!(matches!(
             result,
-            Err(message) if message.contains("unknown request_id")
+            Err(RuntimeManagerError::RequestTimeout(message))
+                if message.contains("No response was received")
         ));
 
-        assert!(manager.pending.lock().unwrap().is_empty());
+        let pending = manager.pending.lock().unwrap();
+        assert!(!pending.contains_key("request-timeout"));
+        assert!(pending.contains_key("request-active"));
+        drop(pending);
+
+        // Clean up the unrelated pending request.
+        manager.remove_pending_request("request-active");
+        drop(still_pending_receiver);
     }
 
     #[test]

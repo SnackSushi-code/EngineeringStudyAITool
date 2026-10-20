@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from uuid import uuid4
 
@@ -57,6 +57,47 @@ def test_model_bridge_preserves_correlation() -> None:
     assert len(model_request.messages) == 1
     assert model_request.messages[0].role == ModelRole.USER
     assert model_request.messages[0].content == request.user_intent
+
+
+def test_model_bridge_places_current_request_after_conversation() -> None:
+    request = IntelligenceRequest(
+        request_id=uuid4(),
+        task_id=uuid4(),
+        user_intent="What should I do next?",
+        conversation=(
+            {"role": "user", "content": "Earlier question"},
+            {"role": "assistant", "content": "Earlier answer"},
+        ),
+    )
+
+    model_request = request.to_model_request()
+
+    assert [message.role for message in model_request.messages] == [
+        ModelRole.USER,
+        ModelRole.ASSISTANT,
+        ModelRole.USER,
+    ]
+    assert [message.content for message in model_request.messages] == [
+        "Earlier question",
+        "Earlier answer",
+        "What should I do next?",
+    ]
+
+
+def test_model_bridge_ends_with_current_request_after_assistant_history() -> None:
+    request = IntelligenceRequest(
+        request_id=uuid4(),
+        task_id=uuid4(),
+        user_intent="Continue from that answer.",
+        conversation=(
+            {"role": "assistant", "content": "The previous answer"},
+        ),
+    )
+
+    model_request = request.to_model_request()
+
+    assert model_request.messages[-1].role == ModelRole.USER
+    assert model_request.messages[-1].content == "Continue from that answer."
 
 
 def test_final_response_requires_text() -> None:
@@ -158,3 +199,33 @@ def test_serialization() -> None:
         model_task_id=str(request.task_id),
     )
     assert result.to_dict()["contract_version"] == INTELLIGENCE_CONTRACT_VERSION
+
+
+def test_model_bridge_keeps_tool_result_last_on_follow_up() -> None:
+    request = IntelligenceRequest(
+        request_id=uuid4(),
+        task_id=uuid4(),
+        user_intent="Calculate the result.",
+        conversation=(
+            {
+                "role": "assistant",
+                "content": '{"decision_type": "TOOL_PROPOSAL"}',
+            },
+            {
+                "role": "tool",
+                "name": "calculator",
+                "content": '{"result": 42}',
+            },
+        ),
+    )
+
+    model_request = request.to_model_request()
+
+    assert [message.role for message in model_request.messages] == [
+        ModelRole.USER,
+        ModelRole.ASSISTANT,
+        ModelRole.TOOL,
+    ]
+    assert model_request.messages[0].content == "Calculate the result."
+    assert model_request.messages[-1].role == ModelRole.TOOL
+    assert '"result": 42' in model_request.messages[-1].content

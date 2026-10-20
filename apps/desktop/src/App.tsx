@@ -6,8 +6,12 @@ import {
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import "./App.css";
-
+import { normalizeMathMarkdown } from "./mathMarkdown";
 type MessageRole = "assistant" | "user";
 
 type MessageStatus =
@@ -235,13 +239,16 @@ function App() {
 
     const submittedMessage = trimmedMessage;
 
-    if (!sessionId) {
+    let activeSessionId = sessionId;
+
+    if (!activeSessionId) {
       try {
         const session = await invoke<RuntimeSession>(
           "runtime_create_session",
         );
 
-        setSessionId(session.sessionId);
+        activeSessionId = session.sessionId;
+        setSessionId(activeSessionId);
       } catch (error) {
         const errorText = String(error);
 
@@ -285,7 +292,7 @@ function App() {
           "runtime_message",
           {
             userIntent: submittedMessage,
-            sessionId: sessionId ?? "",
+            sessionId: activeSessionId ?? "",
           },
         );
 
@@ -321,7 +328,12 @@ function App() {
 
       setInput(submittedMessage);
 
-      await refreshRuntimeHealth();
+      // Refresh health independently so a stalled health request
+      // cannot keep the message composer stuck in the sending state.
+      void refreshRuntimeHealth().catch(() => {
+        // The original runtime error is already displayed.
+        // A health-refresh failure should not replace it.
+      });
     } finally {
       setIsSending(false);
     }
@@ -658,7 +670,14 @@ function App() {
                       </time>
                     </div>
 
-                    <p>{message.content}</p>
+                    <div className="message-markdown">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkMath]}
+                        rehypePlugins={[rehypeKatex]}
+                      >
+                        {normalizeMathMarkdown(message.content)}
+                      </ReactMarkdown>
+                    </div>
 
                     {message.error && (
                       <div className="message-error-detail">
@@ -749,7 +768,7 @@ function App() {
                 </span>
 
                 <span aria-hidden="true">
-                  →
+                  {"\u2192"}
                 </span>
               </button>
             </form>
@@ -798,9 +817,7 @@ function App() {
                   <span
                     className="quick-arrow"
                     aria-hidden="true"
-                  >
-                    →
-                  </span>
+                  >{"\u2192"}</span>
                 </button>
               ))}
             </div>

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 import json
 from uuid import uuid4
 import pytest
@@ -270,3 +270,78 @@ def test_model_cannot_supply_authority_fields():
             IntelligenceOrchestrator(make_service(json.dumps(payload))).process(request)
 
         assert str(exc_info.value) == "model response contains an invalid tool_call"
+
+def operation_registry():
+    """Registry for tools that require operation inside their argument schema."""
+    r = ToolRegistry()
+    r.register(
+        ToolDescriptor(
+            tool_id="engineering.test",
+            version="1.0",
+            description="Test engineering operation",
+            capabilities=("READ",),
+            arguments=ToolArgumentSchema(
+                arguments=(
+                    ToolArgument(
+                        name="operation",
+                        value_type=ToolValueType.STRING,
+                        required=True,
+                        description="Operation to perform",
+                    ),
+                    ToolArgument(
+                        name="path",
+                        value_type=ToolValueType.STRING,
+                        required=True,
+                        description="Input path",
+                    ),
+                )
+            ),
+            required_permissions=(
+                PermissionScope(PermissionClass.READ, "engineering:test"),
+            ),
+            retry_mode=RetryMode.NONE,
+            max_timeout_ms=2500,
+        ),
+        lambda context, arguments: dict(arguments),
+    )
+    return r
+
+
+def operation_proposal(args):
+    return IntelligenceToolProposal(
+        request_id=uuid4(),
+        task_id=uuid4(),
+        tool="engineering.test",
+        operation="read",
+        arguments=args,
+    )
+
+
+def test_required_operation_argument_is_reconciled_from_proposal():
+    resolver = ToolAuthorityResolver(operation_registry())
+
+    resolved = resolver.resolve(
+        operation_proposal({"path": "notes.txt"})
+    )
+
+    assert resolved.call.operation == "read"
+    assert resolved.call.arguments == {
+        "operation": "read",
+        "path": "notes.txt",
+    }
+
+
+def test_existing_operation_argument_is_preserved_when_different_from_proposal():
+    resolver = ToolAuthorityResolver(operation_registry())
+
+    resolved = resolver.resolve(
+        operation_proposal(
+            {"operation": "delete", "path": "notes.txt"}
+        )
+    )
+
+    assert resolved.call.operation == "read"
+    assert resolved.call.arguments == {
+        "operation": "delete",
+        "path": "notes.txt",
+    }

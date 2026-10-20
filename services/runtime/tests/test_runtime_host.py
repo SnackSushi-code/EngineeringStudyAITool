@@ -313,6 +313,81 @@ def test_host_processes_requests_concurrently(monkeypatch) -> None:
     assert response_ids == request_ids
 
 
+def test_host_configures_stdout_for_utf8(monkeypatch) -> None:
+    request = RuntimeRequest(
+        request_id=str(uuid4()),
+        task_id=str(uuid4()),
+        operation="health",
+        payload={},
+    )
+
+    output_lines: list[str] = []
+    reconfigure_calls: list[dict[str, str]] = []
+
+    def fake_application(*, repository_root):
+        return object()
+
+    def fake_handle_line(*, raw_line, application):
+        decoded_request = decode_request(raw_line)
+        return RuntimeResponse(
+            request_id=decoded_request.request_id,
+            task_id=decoded_request.task_id,
+            status="completed",
+            payload={"text": "Voltage: 15 V; resistance: 5 \u03a9; test: \U0001F9EA"},
+        )
+
+    class FakeStdin:
+        def __iter__(self):
+            return iter([encode_message(request) + "\n"])
+
+    class FakeStdout:
+        def reconfigure(self, **kwargs):
+            reconfigure_calls.append(kwargs)
+
+        def write(self, value):
+            output_lines.append(value)
+            return len(value)
+
+        def flush(self):
+            pass
+
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host.RuntimeApplication",
+        fake_application,
+    )
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host._handle_line",
+        fake_handle_line,
+    )
+    monkeypatch.setattr(
+        "anne_runtime.runtime_host.sys",
+        type(
+            "FakeSys",
+            (),
+            {
+                "stdin": FakeStdin(),
+                "stdout": FakeStdout(),
+            },
+        ),
+    )
+
+    result = run_host()
+
+    assert result == 0
+    assert reconfigure_calls == [{"encoding": "utf-8", "errors": "strict"}]
+
+    responses = [
+        decode_response(line)
+        for line in output_lines
+        if line.strip()
+    ]
+
+    assert len(responses) == 1
+    assert responses[0].payload["text"] == (
+        "Voltage: 15 V; resistance: 5 \u03a9; test: \U0001F9EA"
+    )
+
+
 def test_host_does_not_write_diagnostics_to_stdout() -> None:
     request = RuntimeRequest(
         request_id=str(uuid4()),

@@ -91,12 +91,20 @@ class IntelligenceRequest:
         return str(self.task_id)
 
     def to_model_request(self) -> ModelRequest:
-        messages = [
-            ModelMessage(
-                role=ModelRole.USER,
-                content=self.user_intent,
+        # Keep the current request before tool exchanges on follow-up calls.
+        messages = []
+        has_tool_result = any(
+            isinstance(item, Mapping) and item.get("role") == "tool"
+            for item in self.conversation
+        )
+
+        if has_tool_result:
+            messages.append(
+                ModelMessage(
+                    role=ModelRole.USER,
+                    content=self.user_intent,
+                )
             )
-        ]
 
         for item in self.conversation:
             role_value = item.get("role")
@@ -128,6 +136,14 @@ class IntelligenceRequest:
                     role=role,
                     content=content,
                     name=name,
+                )
+            )
+
+        if not has_tool_result:
+            messages.append(
+                ModelMessage(
+                    role=ModelRole.USER,
+                    content=self.user_intent,
                 )
             )
 

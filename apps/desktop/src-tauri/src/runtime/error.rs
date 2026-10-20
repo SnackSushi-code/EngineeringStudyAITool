@@ -9,6 +9,7 @@ pub enum RuntimeManagerError {
     Protocol(String),
     ProcessExited(String),
     InvalidResponse(String),
+    RequestTimeout(String),
 }
 
 impl fmt::Display for RuntimeManagerError {
@@ -30,6 +31,9 @@ impl fmt::Display for RuntimeManagerError {
             }
             Self::InvalidResponse(message) => {
                 write!(f, "Invalid Ann-E runtime response: {message}")
+            }
+            Self::RequestTimeout(message) => {
+                write!(f, "Ann-E runtime request timed out: {message}")
             }
         }
     }

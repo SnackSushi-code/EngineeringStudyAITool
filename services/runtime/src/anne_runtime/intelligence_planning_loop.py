@@ -45,6 +45,26 @@ class IntelligencePlanningOutcome:
         return self.final_response is not None
 
 
+def _requires_explicit_tool_execution(user_intent: str) -> bool:
+    """Detect explicit requests that require a runtime tool call before answering."""
+    text = user_intent.casefold()
+    mentions_tool = "tool" in text or "anne." in text
+    requires_execution = any(
+        phrase in text
+        for phrase in (
+            "must execute",
+            "must run",
+            "must invoke",
+            "must call",
+            "execute the",
+            "run the",
+            "invoke the",
+            "call the",
+        )
+    )
+    return mentions_tool and requires_execution
+
+
 class IntelligencePlanningLoop:
     """Bounded planner/executor loop over the existing intelligence/runtime boundaries.
 
@@ -124,6 +144,25 @@ class IntelligencePlanningLoop:
             decision = invocation.result.decision
 
             if decision.decision_type == IntelligenceDecisionType.FINAL_RESPONSE:
+                if _requires_explicit_tool_execution(request.user_intent) and (
+                    last_outcome is None
+                    or last_outcome.state != TaskState.SUCCEEDED
+                ):
+                    return IntelligencePlanningOutcome(
+                        final_response=None,
+                        iterations=tuple(
+                            iterations
+                            + [
+                                PlanningIteration(
+                                    index=index,
+                                    invocation=invocation,
+                                    task_outcome=None,
+                                )
+                            ]
+                        ),
+                        last_task_outcome=last_outcome,
+                        stop_reason="TOOL_EXECUTION_REQUIRED",
+                    )
                 return IntelligencePlanningOutcome(
                     final_response=decision.response_text,
                     iterations=tuple(

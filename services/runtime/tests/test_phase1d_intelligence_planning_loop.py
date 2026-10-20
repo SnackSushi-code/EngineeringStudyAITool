@@ -212,6 +212,39 @@ def test_final_response_completes_without_runtime_execution():
     assert recorder.calls == []
 
 
+
+def test_explicit_tool_request_does_not_claim_execution_without_tool_call():
+    request = make_request()
+    request = IntelligenceRequest(
+        request_id=request.request_id,
+        task_id=request.task_id,
+        user_intent=(
+            "You MUST execute the test.counter tool before answering. "
+            "Do not answer without running the tool."
+        ),
+        metadata=request.metadata,
+    )
+    task_request = make_task_request(request)
+
+    def responder(model_request):
+        return json.dumps(
+            {
+                "contract_version": "1.0",
+                "decision_type": "FINAL_RESPONSE",
+                "response_text": "The tool executed successfully and returned 42.",
+            }
+        )
+
+    loop, recorder = make_loop(responder, [])
+    outcome = loop.run(request, task_request)
+
+    assert recorder.calls == []
+    assert outcome.last_task_outcome is None
+    # A model-generated claim is not evidence of runtime tool execution.
+    assert outcome.completed is False
+    assert outcome.stop_reason == "TOOL_EXECUTION_REQUIRED"
+
+
 def test_successful_tool_is_followed_by_next_model_iteration():
     request = make_request()
     task_request = make_task_request(request)
