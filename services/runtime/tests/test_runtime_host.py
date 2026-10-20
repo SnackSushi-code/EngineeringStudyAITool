@@ -747,3 +747,57 @@ def test_host_handles_invalid_stdout_pipe(monkeypatch) -> None:
     )
 
     assert run_host() == 0
+
+def test_gemini_calculator_production_path():
+    """Gemini must route a calculator request through a real tool iteration."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    request = {
+        "protocol_version": "1.0",
+        "type": "request",
+        "request_id": "00000000-0000-0000-0000-000000000801",
+        "task_id": "00000000-0000-0000-0000-000000000802",
+        "operation": "message",
+        "payload": {
+            "user_intent": (
+                "Use the calculator tool to calculate 25 times 16. "
+                "Return the tool result and then give me the final answer."
+            )
+        },
+    }
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(
+        __import__("pathlib").Path(__file__).resolve().parents[1] / "src"
+    )
+    env["ANNE_MODEL_PROVIDER"] = "gemini"
+
+    process = subprocess.run(
+        [sys.executable, "-m", "anne_runtime.runtime_host"],
+        input=json.dumps(request),
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=120,
+        check=False,
+    )
+
+    assert process.returncode == 0, process.stderr
+
+    json_lines = [
+        line.strip()
+        for line in process.stdout.splitlines()
+        if line.strip().startswith('{"protocol_version"')
+    ]
+
+    assert json_lines, process.stdout
+
+    response = json.loads(json_lines[-1])
+
+    assert response["status"] == "completed"
+    assert response["payload"]["provider_id"] == "gemini"
+    assert response["payload"]["iterations"] == 2
+    assert "400" in response["payload"]["response_text"]

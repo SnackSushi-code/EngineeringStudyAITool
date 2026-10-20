@@ -260,6 +260,7 @@ MATHEMATICAL FORMATTING:
                     ModelCapability.TEXT_INPUT,
                     ModelCapability.TEXT_OUTPUT,
                     ModelCapability.STRUCTURED_OUTPUT,
+                    ModelCapability.TOOL_CALLING,
                 }
             ),
         )

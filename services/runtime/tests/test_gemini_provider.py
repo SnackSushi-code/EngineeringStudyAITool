@@ -841,3 +841,11 @@ def test_provider_system_instruction_requires_tool_when_explicitly_requested():
     assert (
         "do not calculate the answer yourself" in instruction
     )
+
+def test_provider_descriptor_advertises_tool_calling_capability():
+    """Gemini must advertise tool calling for production tool routing."""
+    from anne_runtime.model_contracts import ModelCapability
+
+    provider = GeminiModelProvider()
+
+    assert ModelCapability.TOOL_CALLING in provider.descriptor.capabilities
