@@ -304,6 +304,7 @@ MATHEMATICAL FORMATTING:
                         "timeout": self._timeout_ms,
                     },
                     "response_mime_type": "application/json",
+                    "response_schema": self.RESPONSE_SCHEMA,
                 },
             )
         except Exception as exc:

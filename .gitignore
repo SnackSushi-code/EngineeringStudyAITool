@@ -38,3 +38,6 @@ data/secrets/
 
 # Python packaging artifacts
 **/*.egg-info/
+
+# Ann-E runtime-generated state
+runtime-data/
