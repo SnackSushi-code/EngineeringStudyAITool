@@ -2,7 +2,7 @@
 
 Ann-E is a desktop-first personal AI engineering companion combining AI assistance, engineering workflows, study tools, persistent learning, a Colony multi-agent environment, voice, and security/auditing.
 
-## Phase 0 â€” Foundation
+## Phase 0 Foundation
 
 Phase 0 deliberately establishes architecture and safety boundaries before feature implementation.
 
